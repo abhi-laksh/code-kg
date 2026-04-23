@@ -36,13 +36,13 @@ npm install code-kg
 From a GitHub repository:
 
 ```bash
-npm install github:<owner>/code-kg
+npm install github:abhi-laksh/code-kg
 ```
 
 Or with an explicit git URL:
 
 ```bash
-npm install git+https://github.com/<owner>/code-kg.git
+npm install git+https://github.com/abhi-laksh/code-kg.git
 ```
 
 ## Quick Start

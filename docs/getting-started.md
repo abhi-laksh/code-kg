@@ -23,13 +23,13 @@ npm run build
 If you want to consume the CLI directly from GitHub in another project:
 
 ```bash
-npm install github:<owner>/code-kg
+npm install github:abhi-laksh/code-kg
 ```
 
 You can also install from the git URL directly:
 
 ```bash
-npm install git+https://github.com/<owner>/code-kg.git
+npm install git+https://github.com/abhi-laksh/code-kg.git
 ```
 
 After the package is published to the npm registry, the standard install command is:
