@@ -1,0 +1,90 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { loadConfig } from "./config.js";
+import { closeDriver } from "./graph/driver.js";
+import { runInit } from "./commands/init.js";
+import { runRebuild } from "./commands/rebuild.js";
+import { runSync } from "./commands/sync.js";
+import { runWatch } from "./commands/watch.js";
+import { runPing } from "./commands/ping.js";
+import { runNew } from "./commands/new.js";
+
+const program = new Command();
+
+program
+  .name("code-kg")
+  .description("Neo4j knowledge graph sync for TypeScript projects")
+  .version("0.1.0");
+
+// ── init ───────────────────────────────────────────────────────────────────────
+program
+  .command("init [projectName]")
+  .description("scaffold .graphrc.json and brain-template docs structure in the current project")
+  .action((projectName?: string) => {
+    runInit(projectName);
+  });
+
+// ── ping ──────────────────────────────────────────────────────────────────────
+program
+  .command("ping")
+  .description("verify Neo4j connection and show db stats")
+  .action(async () => {
+    const cfg = loadConfig();
+    await runPing(cfg);
+  });
+
+// ── rebuild ───────────────────────────────────────────────────────────────────
+program
+  .command("rebuild")
+  .description("wipe the graph and re-index the entire project from scratch")
+  .option("--fast", "use fast name-based call resolution instead of accurate type-following")
+  .action(async (opts: { fast?: boolean }) => {
+    const cfg = loadConfig();
+    try {
+      await runRebuild(cfg, !!opts.fast);
+    } finally {
+      await closeDriver();
+    }
+  });
+
+// ── sync ──────────────────────────────────────────────────────────────────────
+program
+  .command("sync <paths...>")
+  .description("incrementally update the graph for the given file paths")
+  .option("--fast", "use fast name-based call resolution")
+  .action(async (paths: string[], opts: { fast?: boolean }) => {
+    const cfg = loadConfig();
+    try {
+      await runSync(paths, cfg, !!opts.fast);
+    } finally {
+      await closeDriver();
+    }
+  });
+
+// ── watch ─────────────────────────────────────────────────────────────────────
+program
+  .command("watch")
+  .description("watch for file changes via watchman and keep the graph in sync")
+  .option("--fast", "use fast name-based call resolution")
+  .action(async (opts: { fast?: boolean }) => {
+    const cfg = loadConfig();
+    await runWatch(cfg, !!opts.fast);
+    // stays alive — watch manages its own process lifecycle
+  });
+
+// ── new ───────────────────────────────────────────────────────────────────────
+program
+  .command("new <type> <path>")
+  .description(
+    "create a new knowledge-base doc from a template\n" +
+    "  types: feature, subfeature, task, flow, error, edge-case, test-case,\n" +
+    "         page, component, state, function, architecture, adr"
+  )
+  .action((type: string, destPath: string) => {
+    runNew(type, destPath);
+  });
+
+program.parseAsync(process.argv).catch((e: Error) => {
+  console.error(e.message);
+  process.exit(1);
+});

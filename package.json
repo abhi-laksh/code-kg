@@ -1,0 +1,28 @@
+{
+  "name": "code-kg",
+  "version": "0.1.0",
+  "description": "Neo4j knowledge graph sync for any TypeScript project",
+  "bin": {
+    "code-kg": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "files": [
+    "dist",
+    "brain-template"
+  ],
+  "keywords": ["neo4j", "knowledge-graph", "codebase", "docs"],
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "fb-watchman": "^2.0.2",
+    "neo4j-driver": "^6.0.1",
+    "ts-morph": "^25.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}
