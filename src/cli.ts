@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { loadConfig } from "./config.js";
 import { closeDriver } from "./graph/driver.js";
 import { runInit } from "./commands/init.js";
+import { runInitTemplates } from "./commands/init-templates.js";
 import { runRebuild } from "./commands/rebuild.js";
 import { runSync } from "./commands/sync.js";
 import { runWatch } from "./commands/watch.js";
@@ -19,9 +20,17 @@ program
 // ── init ───────────────────────────────────────────────────────────────────────
 program
   .command("init [projectName]")
-  .description("scaffold .graphrc.json and brain-template docs structure in the current project")
-  .action((projectName?: string) => {
-    runInit(projectName);
+  .description("configure .graphrc.json with Neo4j credentials and verify the connection")
+  .action(async (projectName?: string) => {
+    await runInit(projectName);
+  });
+
+// ── init-templates ────────────────────────────────────────────────────────────
+program
+  .command("init-templates")
+  .description("scaffold brain-template knowledge base docs structure in the current project")
+  .action(() => {
+    runInitTemplates();
   });
 
 // ── ping ──────────────────────────────────────────────────────────────────────

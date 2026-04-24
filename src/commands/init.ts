@@ -1,53 +1,93 @@
 import fs from "fs";
 import path from "path";
+import * as readline from "readline";
 import { ROOT, defaultGraphrc } from "../config.js";
+import { openSession, closeDriver } from "../graph/driver.js";
+import { Config } from "../types.js";
 
-const TEMPLATE_DIR = path.join(__dirname, "..", "..", "brain-template");
+function ask(rl: readline.Interface, question: string): Promise<string> {
+  return new Promise((resolve) => rl.question(question, resolve));
+}
 
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const item of fs.readdirSync(src)) {
-    const srcPath = path.join(src, item);
-    const destPath = path.join(dest, item);
-    if (fs.statSync(srcPath).isDirectory()) {
-      copyDir(srcPath, destPath);
-    } else if (!fs.existsSync(destPath)) {
-      fs.copyFileSync(srcPath, destPath);
-      console.log(`  created  ${path.relative(ROOT, destPath)}`);
-    } else {
-      console.log(`  skipped  ${path.relative(ROOT, destPath)} (already exists)`);
-    }
+async function prompt(label: string, defaultVal: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await ask(rl, `  ${label} (${defaultVal}): `);
+  rl.close();
+  return answer.trim() || defaultVal;
+}
+
+async function tryPing(cfg: Config): Promise<void> {
+  const session = openSession(cfg);
+  try {
+    const t0 = Date.now();
+    await session.run("RETURN 1");
+    const ms = Date.now() - t0;
+    console.log(`
+  Connected to Neo4j in ${ms}ms — you're all set!
+
+  Next steps:
+    code-kg rebuild    — index your codebase
+    code-kg watch      — keep it in sync while you work
+    code-kg init-templates  — scaffold knowledge base docs
+`);
+  } catch {
+    console.log(`
+  Could not reach Neo4j at ${cfg.uri}.
+  Make sure Neo4j is running before you use code-kg.
+
+  Download Neo4j Desktop  → https://neo4j.com/download/
+  Or run via Docker       → https://hub.docker.com/_/neo4j
+
+  Your .graphrc.json has been saved — run \`code-kg ping\` once Neo4j is up.
+`);
+  } finally {
+    await session.close();
+    await closeDriver();
   }
 }
 
-export function runInit(projectName?: string): void {
+export async function runInit(projectName?: string): Promise<void> {
   const name = projectName ?? path.basename(ROOT);
 
-  // Write .graphrc.json
+  console.log("\n[init] Setting up code-kg for this project\n");
+
+  const database = await prompt("Neo4j database", "neo4j");
+  const uri      = await prompt("Neo4j URI",      "bolt://localhost:7687");
+  const username = await prompt("Username",        "neo4j");
+  const password = await prompt("Password",        "neo4j");
+
+  const rc = {
+    ...defaultGraphrc(name),
+    uri,
+    username,
+    password,
+    database,
+  };
+
   const rcPath = path.join(ROOT, ".graphrc.json");
   if (fs.existsSync(rcPath)) {
-    console.log("  skipped  .graphrc.json (already exists)");
+    console.log("\n  skipped  .graphrc.json (already exists)");
   } else {
-    fs.writeFileSync(rcPath, JSON.stringify(defaultGraphrc(name), null, 2) + "\n");
-    console.log("  created  .graphrc.json");
+    fs.writeFileSync(rcPath, JSON.stringify(rc, null, 2) + "\n");
+    console.log("\n  created  .graphrc.json");
   }
 
-  // Copy brain-template structure
-  if (!fs.existsSync(TEMPLATE_DIR)) {
-    console.warn(`[init] brain-template not found at ${TEMPLATE_DIR} — skipping docs scaffold`);
-    return;
-  }
+  const cfg: Config = {
+    uri,
+    username,
+    password,
+    database,
+    project: name,
+    ignoreDirs: ((rc as Record<string, unknown>).ignoreDirs as string[] | undefined) ?? [],
+    codeExts: [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"],
+    docExts: [".md", ".mdx"],
+    configFiles: ["package.json", "tsconfig.json", "Dockerfile"],
+    configPatterns: ["^tsconfig.*\\.json$", "\\.ya?ml$", "\\.tf$", "^\\.env.*"],
+    entryPatterns: [],
+    docScopeParents: ["features", "modules", "domains", "packages", "apps"],
+    debounceMs: 2000,
+  };
 
-  console.log("\n[init] scaffolding knowledge base structure…");
-  copyDir(TEMPLATE_DIR, ROOT);
-
-  console.log(`
-[init] done!
-
-Next steps:
-  1. Edit .graphrc.json — set your Neo4j credentials
-  2. Run: code-kg ping       — verify the connection
-  3. Run: code-kg rebuild    — index your codebase
-  4. Run: code-kg watch      — keep it in sync while you work
-`);
+  console.log("\n  Pinging Neo4j…");
+  await tryPing(cfg);
 }

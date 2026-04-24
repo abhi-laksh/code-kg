@@ -10,7 +10,7 @@ import {
 } from "../graph/parser.js";
 import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
-  writeSymbols, writeImports, writeCalls, writeDocs, writePlanItems,
+  writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
   writeDecisions, writeConstraints, deleteFile, deleteSymbolsFor,
   deleteImportsFor, deleteCallsTouching, deleteDoc, gcEmptyFolders,
   collectCounts, diffCounts,
@@ -145,6 +145,7 @@ export async function applyBatch(
     const allPaths = allPathsRes.records.map((r) => r.get("p") as string);
     const { docs, planItems, decisions, constraints } = parseDocs(docChanged, allPaths, cfg);
     await writeDocs(session, docs);
+    await writeDocLinks(session, docs);
     await writePlanItems(session, planItems);
     await writeDecisions(session, decisions);
     await writeConstraints(session, constraints);

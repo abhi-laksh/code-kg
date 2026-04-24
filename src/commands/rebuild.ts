@@ -5,7 +5,7 @@ import { walkRepo } from "../graph/walker.js";
 import { parseCodeFiles, parseDocs, buildSymbolIndex, resolveCallsAccurate, resolveCallsFast } from "../graph/parser.js";
 import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
-  writeSymbols, writeImports, writeCalls, writeDocs, writePlanItems,
+  writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
   writeDecisions, writeConstraints, collectCounts, diffCounts,
 } from "../graph/writer.js";
 
@@ -48,6 +48,7 @@ export async function runRebuild(cfg: Config, fast = false): Promise<GraphReport
     await writeImports(session, allImports);
     await writeCalls(session, calls);
     await writeDocs(session, docs);
+    await writeDocLinks(session, docs);
     await writePlanItems(session, planItems);
     await writeDecisions(session, decisions);
     await writeConstraints(session, constraints);

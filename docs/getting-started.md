@@ -11,77 +11,92 @@
 - A running Neo4j database
 - Watchman if you plan to use `code-kg watch`
 
-## Install Dependencies
+## Install Globally (Recommended)
 
-For local development from the repository root:
+Install once and use `code-kg` as a command in any project on your machine.
 
+**From GitHub (works now):**
 ```bash
+npm install -g git+https://github.com/abhi-laksh/code-kg.git
+# shorthand:
+npm install -g github:abhi-laksh/code-kg
+```
+
+**From npm (once published):**
+```bash
+npm install -g code-kg
+```
+
+**From local source (during development):**
+```bash
+cd /path/to/code-kg
 npm install
 npm run build
+npm link
 ```
 
-If you want to consume the CLI directly from GitHub in another project:
+To unlink later: `npm unlink -g code-kg`
 
-```bash
-npm install github:abhi-laksh/code-kg
-```
-
-You can also install from the git URL directly:
-
-```bash
-npm install git+https://github.com/abhi-laksh/code-kg.git
-```
-
-After the package is published to the npm registry, the standard install command is:
-
-```bash
-npm install code-kg
-```
-
-## Run the CLI Locally
-
-```bash
-node dist/cli.js --help
-```
-
-If installed as a dependency in a project, run it with:
-
-```bash
-npx code-kg --help
-```
-
-If installed globally, run:
-
+Verify the install:
 ```bash
 code-kg --help
 ```
 
 ## Initialize a Project
 
-Run the scaffold command in the target repository:
+`cd` into any project and run:
 
 ```bash
-code-kg init my-project
+code-kg init
 ```
 
-If you installed the package as a local dependency instead of globally, use:
+This prompts for your Neo4j connection details (with defaults), writes `.graphrc.json`, and pings the database to confirm the connection.
+
+`code-kg` always reads `.graphrc.json` from the current working directory, so each project has its own config.
+
+To also scaffold the knowledge base doc structure:
 
 ```bash
-npx code-kg init my-project
+code-kg init-templates
 ```
 
-If you are developing from this repository without an install step, use:
+This copies the `brain-template` markdown structure into the current project. Existing files are never overwritten.
+
+## Install as a Project Dependency (Alternative)
+
+If you prefer not to install globally, add it as a dev dependency instead.
+
+**npm:**
+```bash
+npm install --save-dev github:abhi-laksh/code-kg
+```
+
+**pnpm:**
+```bash
+pnpm add -D github:abhi-laksh/code-kg
+```
+
+> pnpm blocks build scripts for git-hosted packages by default. If you see `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, create or update `pnpm-workspace.yaml` at the project root:
+> ```yaml
+> onlyBuiltDependencies:
+>   - code-kg
+> ```
+> Then rerun `pnpm install`.
+
+Run via npx / pnpm exec:
+```bash
+npx code-kg init
+pnpm exec code-kg init
+```
+
+## Local Development (from source)
 
 ```bash
-node /path/to/code-kg/dist/cli.js init my-project
+cd /path/to/code-kg
+npm install
+npm run build
+node dist/cli.js --help
 ```
-
-This creates:
-
-- `.graphrc.json`
-- the `brain-template` markdown structure in the current project
-
-Existing files are preserved and skipped.
 
 ## Default Configuration
 
@@ -127,12 +142,6 @@ Verify database access:
 code-kg ping
 ```
 
-With a local dependency install:
-
-```bash
-npx code-kg ping
-```
-
 Build the graph from scratch:
 
 ```bash
@@ -143,12 +152,6 @@ Keep it updated during development:
 
 ```bash
 code-kg watch
-```
-
-With a local dependency install:
-
-```bash
-npx code-kg watch
 ```
 
 ## Incremental Updates
@@ -173,4 +176,4 @@ code-kg sync src/cli.ts docs/getting-started.md
 
 `new` fails with missing templates:
 
-- Run `code-kg init` in the target project first
+- Run `code-kg init-templates` in the target project first

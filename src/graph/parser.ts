@@ -270,6 +270,86 @@ export function resolveCallsFast(entries: ParsedCode[], idx: SymbolIndex): CallE
 
 // ── doc parser ────────────────────────────────────────────────────────────────
 
+type FrontmatterValue = string | string[] | number | boolean | null;
+
+function parseFrontmatter(content: string): { fields: Record<string, FrontmatterValue>; body: string } {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!m) return { fields: {}, body: content };
+
+  const fields: Record<string, FrontmatterValue> = {};
+  const raw = m[1];
+  const body = m[2];
+
+  let currentKey: string | null = null;
+  let inArray = false;
+  const arrayBuf: string[] = [];
+
+  const flushArray = () => {
+    if (currentKey && inArray) fields[currentKey] = arrayBuf.slice();
+    inArray = false;
+    arrayBuf.length = 0;
+  };
+
+  for (const line of raw.split(/\r?\n/)) {
+    const stripped = line.replace(/#.*$/, "").trimEnd();
+    const kv = stripped.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)?$/);
+    if (kv) {
+      flushArray();
+      currentKey = kv[1];
+      const val = (kv[2] ?? "").trim();
+      if (val === "" || val === "[]") {
+        inArray = true;
+      } else if (val.startsWith("[") && val.endsWith("]")) {
+        fields[currentKey] = val.slice(1, -1).split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+      } else {
+        fields[currentKey] = val.replace(/^["']|["']$/g, "");
+        inArray = false;
+      }
+      continue;
+    }
+    const item = stripped.match(/^\s*-\s+(.*)/);
+    if (item && inArray) {
+      arrayBuf.push(item[1].trim().replace(/^["']|["']$/g, ""));
+    }
+  }
+  flushArray();
+
+  return { fields, body };
+}
+
+function extractWikiTargets(text: string): string[] {
+  const targets: string[] = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const target = m[1].split("|")[0].trim();
+    if (target) targets.push(target);
+  }
+  return targets;
+}
+
+function resolveWikiLink(
+  target: string,
+  docIdIndex: Map<string, string>,
+  pathSet: Set<string>,
+): { kind: "doc" | "code"; path: string } | null {
+  if (pathSet.has(target)) return { kind: "code", path: target };
+  const docPath = docIdIndex.get(target);
+  if (docPath) return { kind: "doc", path: docPath };
+  return null;
+}
+
+function collectFrontmatterLinkTargets(fields: Record<string, FrontmatterValue>): string[] {
+  const targets: string[] = [];
+  for (const val of Object.values(fields)) {
+    if (typeof val === "string") targets.push(...extractWikiTargets(val));
+    else if (Array.isArray(val)) {
+      for (const v of val) if (typeof v === "string") targets.push(...extractWikiTargets(v));
+    }
+  }
+  return targets;
+}
+
 function extractTitle(content: string, fallback: string): string {
   const m = content.match(/^#\s+(.+?)\s*$/m);
   return m ? oneLiner(m[1]) : fallback.replace(/\.mdx?$/, "");
@@ -374,6 +454,8 @@ function detectSeverity(text: string): Constraint["severity"] {
   return "nice";
 }
 
+const KNOWN_META_KEYS = new Set(["id", "type", "name", "status", "summary", "updated", "tags"]);
+
 export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config): ParsedDocs {
   const pathSet = new Set(allPaths);
   const bareRx = buildBarePathRx(cfg);
@@ -382,15 +464,63 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
   const decisions: Decision[] = [];
   const constraints: Constraint[] = [];
 
+  // Pass 1: build id→path index from frontmatter
+  const docIdIndex = new Map<string, string>();
+  const parsedFiles = new Map<string, { content: string; fields: Record<string, FrontmatterValue>; body: string }>();
   for (const f of docFiles) {
     let content: string;
     try { content = fs.readFileSync(f.full, "utf-8"); } catch { continue; }
+    const { fields, body } = parseFrontmatter(content);
+    parsedFiles.set(f.path, { content, fields, body });
+    const id = typeof fields.id === "string" && fields.id ? fields.id : undefined;
+    if (id) docIdIndex.set(id, f.path);
+  }
 
-    const title = extractTitle(content, f.name);
-    const summary = extractSummary(content);
+  // Pass 2: parse each doc with resolved wiki links
+  for (const f of docFiles) {
+    const parsed = parsedFiles.get(f.path);
+    if (!parsed) continue;
+    const { content, fields, body } = parsed;
+
+    const title = extractTitle(body || content, f.name);
+    const summary = (typeof fields.summary === "string" && fields.summary) || extractSummary(body || content);
     const scope = extractScope(f.path, cfg.docScopeParents);
-    const targetPaths = extractTargetPaths(content, f.path, pathSet, bareRx);
-    docs.push({ path: f.path, title, summary, scope, targetPaths });
+    const targetPaths = extractTargetPaths(body || content, f.path, pathSet, bareRx);
+
+    // collect all [[targets]] from body + frontmatter values, resolve each
+    const allWikiTargets = [
+      ...extractWikiTargets(body || content),
+      ...collectFrontmatterLinkTargets(fields),
+    ];
+    const docLinks: string[] = [];
+    for (const target of allWikiTargets) {
+      const resolved = resolveWikiLink(target, docIdIndex, pathSet);
+      if (!resolved) continue;
+      if (resolved.kind === "doc") { if (!docLinks.includes(resolved.path)) docLinks.push(resolved.path); }
+      else { if (!targetPaths.includes(resolved.path)) targetPaths.push(resolved.path); }
+    }
+
+    // split frontmatter into well-known fields vs meta
+    const meta: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(fields)) {
+      if (!KNOWN_META_KEYS.has(k)) meta[k] = v;
+    }
+
+    docs.push({
+      path: f.path,
+      title,
+      summary,
+      scope,
+      targetPaths,
+      docLinks,
+      id: typeof fields.id === "string" && fields.id ? fields.id : undefined,
+      docType: typeof fields.type === "string" && fields.type ? fields.type : undefined,
+      name: typeof fields.name === "string" && fields.name ? fields.name : undefined,
+      status: typeof fields.status === "string" && fields.status ? fields.status : undefined,
+      tags: Array.isArray(fields.tags) ? (fields.tags as string[]) : undefined,
+      updated: typeof fields.updated === "string" && fields.updated ? fields.updated : undefined,
+      meta: Object.keys(meta).length ? meta : undefined,
+    });
 
     let planIdx = 0;
     for (const line of content.split(/\r?\n/)) {

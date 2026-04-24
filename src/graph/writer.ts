@@ -16,6 +16,7 @@ export async function ensureSchema(session: Session): Promise<void> {
     `CREATE CONSTRAINT IF NOT EXISTS FOR (p:PlanItem)      REQUIRE (p.doc, p.index)         IS UNIQUE`,
     `CREATE CONSTRAINT IF NOT EXISTS FOR (d:Decision)      REQUIRE (d.doc, d.index)         IS UNIQUE`,
     `CREATE CONSTRAINT IF NOT EXISTS FOR (c:Constraint)    REQUIRE (c.doc, c.index)         IS UNIQUE`,
+    `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.id)`,
   ];
   for (const s of stmts) await session.run(s);
 }
@@ -159,12 +160,37 @@ export async function writeDocs(session: Session, docs: DocInfo[]): Promise<void
      SET doc.title       = d.title,
          doc.summary     = d.summary,
          doc.scope       = d.scope,
-         doc.targetPaths = d.targetPaths
+         doc.targetPaths = d.targetPaths,
+         doc.id          = d.id,
+         doc.docType     = d.docType,
+         doc.name        = d.name,
+         doc.status      = d.status,
+         doc.tags        = d.tags,
+         doc.updated     = d.updated,
+         doc.meta        = d.meta
      WITH doc, d
      UNWIND d.targetPaths AS tp
      MATCH (t) WHERE (t:File OR t:Folder) AND t.path = tp
      MERGE (doc)-[:TARGETS]->(t)`,
-    { docs },
+    {
+      docs: docs.map((d) => ({
+        ...d,
+        meta: d.meta != null ? JSON.stringify(d.meta) : null,
+      })),
+    },
+  );
+}
+
+export async function writeDocLinks(session: Session, docs: DocInfo[]): Promise<void> {
+  const withLinks = docs.filter((d) => d.docLinks.length > 0);
+  if (!withLinks.length) return;
+  await session.run(
+    `UNWIND $docs AS d
+     MATCH (src:Doc {path: d.path})
+     UNWIND d.docLinks AS lp
+     MATCH (dst:Doc {path: lp})
+     MERGE (src)-[:CONNECTS]->(dst)`,
+    { docs: withLinks.map((d) => ({ path: d.path, docLinks: d.docLinks })) },
   );
 }
 
@@ -267,14 +293,15 @@ export async function collectCounts(session: Session): Promise<GraphCounts> {
     CALL () { MATCH (n:Constraint)    RETURN count(n) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, c AS cc
     CALL () { MATCH ()-[r:IMPORTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, c AS ic
     CALL () { MATCH ()-[r:CALLS]->()   RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, c AS cac
-    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac
+    CALL () { MATCH ()-[r:CONNECTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, c AS conc
+    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, conc
   `);
   const r = unwrapRecord(res.records[0]);
   return {
     Project: r.pc as number, Folder: r.fc as number, File: r.fic as number,
     ExternalModule: r.emc as number, Symbol: r.sc as number, Doc: r.dc as number,
     PlanItem: r.pic as number, Decision: r.dec as number, Constraint: r.cc as number,
-    IMPORTS: r.ic as number, CALLS: r.cac as number,
+    IMPORTS: r.ic as number, CALLS: r.cac as number, CONNECTS: r.conc as number,
   };
 }
 

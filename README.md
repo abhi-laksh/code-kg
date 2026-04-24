@@ -45,6 +45,25 @@ Or with an explicit git URL:
 npm install git+https://github.com/abhi-laksh/code-kg.git
 ```
 
+With pnpm:
+
+```bash
+pnpm add github:abhi-laksh/code-kg
+```
+
+If pnpm blocks the git package build with `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, allow `code-kg` in your consuming project's `pnpm-workspace.yaml`:
+
+```yaml
+onlyBuiltDependencies:
+  - code-kg
+```
+
+Then rerun:
+
+```bash
+pnpm install
+```
+
 ## Quick Start
 
 1. Start a Neo4j instance.
