@@ -6,7 +6,7 @@
     "code-kg": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "npx tsc",
     "prepare": "npm run build"
   },
   "files": [
@@ -19,10 +19,10 @@
     "commander": "^12.1.0",
     "fb-watchman": "^2.0.2",
     "neo4j-driver": "^6.0.1",
-    "ts-morph": "^25.0.1"
+    "ts-morph": "^25.0.1",
+    "typescript": "^5.5.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "typescript": "^5.5.0"
+    "@types/node": "^22.0.0"
   }
 }
