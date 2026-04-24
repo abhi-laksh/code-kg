@@ -41,6 +41,7 @@ async function runRebuild(cfg, fast = false) {
         await (0, writer_js_1.writeImports)(session, allImports);
         await (0, writer_js_1.writeCalls)(session, calls);
         await (0, writer_js_1.writeDocs)(session, docs);
+        await (0, writer_js_1.writeDocLinks)(session, docs);
         await (0, writer_js_1.writePlanItems)(session, planItems);
         await (0, writer_js_1.writeDecisions)(session, decisions);
         await (0, writer_js_1.writeConstraints)(session, constraints);

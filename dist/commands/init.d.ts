@@ -1,1 +1,1 @@
-export declare function runInit(projectName?: string): void;
+export declare function runInit(projectName?: string): Promise<void>;

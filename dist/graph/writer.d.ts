@@ -8,6 +8,7 @@ export declare function writeSymbols(session: Session, symbols: SymbolInfo[]): P
 export declare function writeImports(session: Session, rawImports: ImportEdge[]): Promise<void>;
 export declare function writeCalls(session: Session, calls: CallEdge[]): Promise<void>;
 export declare function writeDocs(session: Session, docs: DocInfo[]): Promise<void>;
+export declare function writeDocLinks(session: Session, docs: DocInfo[]): Promise<void>;
 export declare function writePlanItems(session: Session, items: PlanItem[]): Promise<void>;
 export declare function writeDecisions(session: Session, items: Decision[]): Promise<void>;
 export declare function writeConstraints(session: Session, items: Constraint[]): Promise<void>;

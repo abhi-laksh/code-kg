@@ -454,7 +454,7 @@ function detectSeverity(text: string): Constraint["severity"] {
   return "nice";
 }
 
-const KNOWN_META_KEYS = new Set(["id", "type", "name", "status", "summary", "updated", "tags"]);
+const KNOWN_META_KEYS = new Set(["id", "type", "name", "status", "summary", "updated", "tags", "keywords"]);
 
 export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config): ParsedDocs {
   const pathSet = new Set(allPaths);
@@ -518,6 +518,7 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
       name: typeof fields.name === "string" && fields.name ? fields.name : undefined,
       status: typeof fields.status === "string" && fields.status ? fields.status : undefined,
       tags: Array.isArray(fields.tags) ? (fields.tags as string[]) : undefined,
+      keywords: Array.isArray(fields.keywords) ? (fields.keywords as string[]) : undefined,
       updated: typeof fields.updated === "string" && fields.updated ? fields.updated : undefined,
       meta: Object.keys(meta).length ? meta : undefined,
     });

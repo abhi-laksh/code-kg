@@ -17,6 +17,12 @@ export async function ensureSchema(session: Session): Promise<void> {
     `CREATE CONSTRAINT IF NOT EXISTS FOR (d:Decision)      REQUIRE (d.doc, d.index)         IS UNIQUE`,
     `CREATE CONSTRAINT IF NOT EXISTS FOR (c:Constraint)    REQUIRE (c.doc, c.index)         IS UNIQUE`,
     `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.id)`,
+    `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.name)`,
+    `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.docType)`,
+    `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.status)`,
+    `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.name)`,
+    `CREATE INDEX IF NOT EXISTS FOR (f:File) ON (f.name)`,
+    `CREATE FULLTEXT INDEX doc_fulltext IF NOT EXISTS FOR (n:Doc) ON EACH [n.title, n.name, n.summary, n.keywords]`,
   ];
   for (const s of stmts) await session.run(s);
 }
@@ -166,6 +172,7 @@ export async function writeDocs(session: Session, docs: DocInfo[]): Promise<void
          doc.name        = d.name,
          doc.status      = d.status,
          doc.tags        = d.tags,
+         doc.keywords    = d.keywords,
          doc.updated     = d.updated,
          doc.meta        = d.meta
      WITH doc, d

@@ -8,6 +8,7 @@ exports.writeSymbols = writeSymbols;
 exports.writeImports = writeImports;
 exports.writeCalls = writeCalls;
 exports.writeDocs = writeDocs;
+exports.writeDocLinks = writeDocLinks;
 exports.writePlanItems = writePlanItems;
 exports.writeDecisions = writeDecisions;
 exports.writeConstraints = writeConstraints;
@@ -33,6 +34,13 @@ async function ensureSchema(session) {
         `CREATE CONSTRAINT IF NOT EXISTS FOR (p:PlanItem)      REQUIRE (p.doc, p.index)         IS UNIQUE`,
         `CREATE CONSTRAINT IF NOT EXISTS FOR (d:Decision)      REQUIRE (d.doc, d.index)         IS UNIQUE`,
         `CREATE CONSTRAINT IF NOT EXISTS FOR (c:Constraint)    REQUIRE (c.doc, c.index)         IS UNIQUE`,
+        `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.id)`,
+        `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.name)`,
+        `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.docType)`,
+        `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.status)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.name)`,
+        `CREATE INDEX IF NOT EXISTS FOR (f:File) ON (f.name)`,
+        `CREATE FULLTEXT INDEX doc_fulltext IF NOT EXISTS FOR (n:Doc) ON EACH [n.title, n.name, n.summary, n.keywords]`,
     ];
     for (const s of stmts)
         await session.run(s);
@@ -148,11 +156,34 @@ async function writeDocs(session, docs) {
      SET doc.title       = d.title,
          doc.summary     = d.summary,
          doc.scope       = d.scope,
-         doc.targetPaths = d.targetPaths
+         doc.targetPaths = d.targetPaths,
+         doc.id          = d.id,
+         doc.docType     = d.docType,
+         doc.name        = d.name,
+         doc.status      = d.status,
+         doc.tags        = d.tags,
+         doc.keywords    = d.keywords,
+         doc.updated     = d.updated,
+         doc.meta        = d.meta
      WITH doc, d
      UNWIND d.targetPaths AS tp
      MATCH (t) WHERE (t:File OR t:Folder) AND t.path = tp
-     MERGE (doc)-[:TARGETS]->(t)`, { docs });
+     MERGE (doc)-[:TARGETS]->(t)`, {
+        docs: docs.map((d) => ({
+            ...d,
+            meta: d.meta != null ? JSON.stringify(d.meta) : null,
+        })),
+    });
+}
+async function writeDocLinks(session, docs) {
+    const withLinks = docs.filter((d) => d.docLinks.length > 0);
+    if (!withLinks.length)
+        return;
+    await session.run(`UNWIND $docs AS d
+     MATCH (src:Doc {path: d.path})
+     UNWIND d.docLinks AS lp
+     MATCH (dst:Doc {path: lp})
+     MERGE (src)-[:CONNECTS]->(dst)`, { docs: withLinks.map((d) => ({ path: d.path, docLinks: d.docLinks })) });
 }
 async function writePlanItems(session, items) {
     if (!items.length)
@@ -232,14 +263,15 @@ async function collectCounts(session) {
     CALL () { MATCH (n:Constraint)    RETURN count(n) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, c AS cc
     CALL () { MATCH ()-[r:IMPORTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, c AS ic
     CALL () { MATCH ()-[r:CALLS]->()   RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, c AS cac
-    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac
+    CALL () { MATCH ()-[r:CONNECTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, c AS conc
+    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, conc
   `);
     const r = (0, driver_js_1.unwrapRecord)(res.records[0]);
     return {
         Project: r.pc, Folder: r.fc, File: r.fic,
         ExternalModule: r.emc, Symbol: r.sc, Doc: r.dc,
         PlanItem: r.pic, Decision: r.dec, Constraint: r.cc,
-        IMPORTS: r.ic, CALLS: r.cac,
+        IMPORTS: r.ic, CALLS: r.cac, CONNECTS: r.conc,
     };
 }
 function diffCounts(before, after) {

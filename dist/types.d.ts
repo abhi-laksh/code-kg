@@ -54,6 +54,15 @@ export interface DocInfo {
     summary: string;
     scope: string;
     targetPaths: string[];
+    docLinks: string[];
+    id?: string;
+    docType?: string;
+    name?: string;
+    status?: string;
+    tags?: string[];
+    keywords?: string[];
+    updated?: string;
+    meta?: Record<string, unknown>;
 }
 export interface PlanItem {
     doc: string;
@@ -97,6 +106,7 @@ export interface GraphCounts {
     Constraint: number;
     IMPORTS: number;
     CALLS: number;
+    CONNECTS: number;
 }
 export interface GraphReport {
     mode: "rebuild" | "sync";

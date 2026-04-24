@@ -5,6 +5,7 @@ const commander_1 = require("commander");
 const config_js_1 = require("./config.js");
 const driver_js_1 = require("./graph/driver.js");
 const init_js_1 = require("./commands/init.js");
+const init_templates_js_1 = require("./commands/init-templates.js");
 const rebuild_js_1 = require("./commands/rebuild.js");
 const sync_js_1 = require("./commands/sync.js");
 const watch_js_1 = require("./commands/watch.js");
@@ -18,9 +19,16 @@ program
 // ── init ───────────────────────────────────────────────────────────────────────
 program
     .command("init [projectName]")
-    .description("scaffold .graphrc.json and brain-template docs structure in the current project")
-    .action((projectName) => {
-    (0, init_js_1.runInit)(projectName);
+    .description("configure .graphrc.json with Neo4j credentials and verify the connection")
+    .action(async (projectName) => {
+    await (0, init_js_1.runInit)(projectName);
+});
+// ── init-templates ────────────────────────────────────────────────────────────
+program
+    .command("init-templates")
+    .description("scaffold brain-template knowledge base docs structure in the current project")
+    .action(() => {
+    (0, init_templates_js_1.runInitTemplates)();
 });
 // ── ping ──────────────────────────────────────────────────────────────────────
 program

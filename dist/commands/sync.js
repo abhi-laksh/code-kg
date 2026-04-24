@@ -133,6 +133,7 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
         const allPaths = allPathsRes.records.map((r) => r.get("p"));
         const { docs, planItems, decisions, constraints } = (0, parser_js_1.parseDocs)(docChanged, allPaths, cfg);
         await (0, writer_js_1.writeDocs)(session, docs);
+        await (0, writer_js_1.writeDocLinks)(session, docs);
         await (0, writer_js_1.writePlanItems)(session, planItems);
         await (0, writer_js_1.writeDecisions)(session, decisions);
         await (0, writer_js_1.writeConstraints)(session, constraints);

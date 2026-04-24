@@ -66,6 +66,7 @@ export interface DocInfo {
   name?: string;
   status?: string;
   tags?: string[];
+  keywords?: string[];
   updated?: string;
   meta?: Record<string, unknown>;
 }
