@@ -6,7 +6,7 @@
     "code-kg": "dist/cli.js"
   },
   "scripts": {
-    "build": "npx tsc",
+    "build": "./node_modules/.bin/tsc",
     "prepare": "npm run build"
   },
   "files": [
