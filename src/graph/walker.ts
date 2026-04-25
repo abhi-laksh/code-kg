@@ -48,11 +48,10 @@ interface GitignoreRule {
   normalizedSource: string;
 }
 
-function loadGitignoreRules(): GitignoreRule[] {
-  const p = path.join(ROOT, ".gitignore");
-  if (!fs.existsSync(p)) return [];
+function parseIgnoreFile(filePath: string): GitignoreRule[] {
+  if (!fs.existsSync(filePath)) return [];
   return fs
-    .readFileSync(p, "utf-8")
+    .readFileSync(filePath, "utf-8")
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#"))
@@ -66,6 +65,13 @@ function loadGitignoreRules(): GitignoreRule[] {
       const stripped = anchored ? source.slice(1) : source;
       return { negate, raw, anchored, directoryOnly, regex: globToRegExp(stripped), normalizedSource: stripped };
     });
+}
+
+function loadGitignoreRules(): GitignoreRule[] {
+  return [
+    ...parseIgnoreFile(path.join(ROOT, ".gitignore")),
+    ...parseIgnoreFile(path.join(ROOT, ".codekgignore")),
+  ];
 }
 
 export function buildIgnoreMatcher(rules: GitignoreRule[]): (relPath: string) => boolean {
