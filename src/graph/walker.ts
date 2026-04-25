@@ -59,10 +59,12 @@ function parseIgnoreFile(filePath: string): GitignoreRule[] {
       const negate = l.startsWith("!");
       const raw = negate ? l.slice(1) : l;
       const norm = normalizePath(raw);
-      const anchored = norm.startsWith("/");
       const directoryOnly = norm.endsWith("/");
       const source = directoryOnly ? norm.slice(0, -1) : norm;
-      const stripped = anchored ? source.slice(1) : source;
+      // gitignore spec: pattern with "/" anywhere (except trailing) is anchored to repo root.
+      const hasLeadingSlash = source.startsWith("/");
+      const stripped = hasLeadingSlash ? source.slice(1) : source;
+      const anchored = hasLeadingSlash || (stripped.includes("/") && !stripped.startsWith("**/"));
       return { negate, raw, anchored, directoryOnly, regex: globToRegExp(stripped), normalizedSource: stripped };
     });
 }
@@ -89,8 +91,11 @@ export function buildIgnoreMatcher(rules: GitignoreRule[]): (relPath: string) =>
       }
       const matched = candidates.some((c) => {
         if (!c) return false;
-        if (rule.directoryOnly) {
-          return c === rule.normalizedSource || c.startsWith(`${rule.normalizedSource}/`) || rule.regex.test(c);
+        if (rule.directoryOnly || rule.anchored) {
+          // exact match OR child of this path OR regex match
+          return c === rule.normalizedSource
+            || c.startsWith(`${rule.normalizedSource}/`)
+            || rule.regex.test(c);
         }
         return rule.regex.test(c);
       });
