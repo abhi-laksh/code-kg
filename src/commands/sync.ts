@@ -18,6 +18,30 @@ import {
 } from "../graph/writer.js";
 import { unwrapRecord } from "../graph/driver.js";
 
+async function pruneIgnoredFromGraph(
+  session: ReturnType<typeof openSession>,
+  cfg: Config,
+): Promise<void> {
+  const { isIgnored } = walkRepo(cfg);
+  const ignoreSet = new Set(cfg.ignoreDirs);
+  const isNowIgnored = (p: string) =>
+    isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg));
+
+  const [fileRes, docRes] = await Promise.all([
+    session.run(`MATCH (f:File) RETURN f.path AS p`),
+    session.run(`MATCH (d:Doc)  RETURN d.path AS p`),
+  ]);
+
+  const toRemoveFiles = fileRes.records.map((r) => r.get("p") as string).filter(isNowIgnored);
+  const toRemoveDocs  = docRes.records.map((r) => r.get("p") as string).filter(isNowIgnored);
+
+  for (const p of toRemoveFiles) await deleteFile(session, p);
+  for (const p of toRemoveDocs)  await deleteDoc(session, p);
+
+  const total = toRemoveFiles.length + toRemoveDocs.length;
+  if (total) console.log(`[sync] pruned ${total} newly-ignored node(s) from graph`);
+}
+
 function detectChangedPaths(): string[] {
   try {
     const modified = execSync("git diff --name-only HEAD", { cwd: ROOT, encoding: "utf8" })
@@ -59,6 +83,14 @@ export async function runSync(inputPaths: string[], cfg: Config, fast = false): 
     const full = path.join(ROOT, p);
     if (fs.existsSync(full) && fs.statSync(full).isFile()) changed.push(p);
     else removed.push(p);
+  }
+
+  const session = openSession(cfg);
+  try {
+    await ensureSchema(session);
+    await pruneIgnoredFromGraph(session, cfg);
+  } finally {
+    await session.close();
   }
 
   return applyBatch({ changed, removed }, cfg, fast);

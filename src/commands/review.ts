@@ -20,11 +20,17 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
 
   try {
     // 1. Files on disk vs indexed in graph
-    const { files: localFiles } = walkRepo(cfg);
+    const { files: localFiles, isIgnored } = walkRepo(cfg);
+    const ignoreSet = new Set(cfg.ignoreDirs);
+    const isNowIgnored = (p: string) =>
+      isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg));
+
     const localPaths = new Set(localFiles.map((f) => f.path));
 
     const indexedRes = await session.run(`MATCH (f:File) RETURN f.path AS p`);
-    const indexedPaths = new Set(indexedRes.records.map((r) => r.get("p") as string));
+    const indexedPaths = new Set(
+      indexedRes.records.map((r) => r.get("p") as string).filter((p) => !isNowIgnored(p)),
+    );
 
     const unindexed = [...localPaths].filter((p) => !indexedPaths.has(p));
     issues.push({
@@ -41,7 +47,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
       RETURN f.path AS p
       ORDER BY p
     `);
-    const noDocFiles = noDocRes.records.map((r) => r.get("p") as string);
+    const noDocFiles = noDocRes.records
+      .map((r) => r.get("p") as string)
+      .filter((p) => !isNowIgnored(p));
     issues.push({
       severity: "WARN",
       check: "Code files with no doc",
@@ -59,7 +67,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
       ORDER BY sym
       LIMIT 100
     `);
-    const deadSymbols = deadSymRes.records.map((r) => r.get("sym") as string);
+    const deadSymbols = deadSymRes.records
+      .map((r) => r.get("sym") as string)
+      .filter((sym) => !isNowIgnored(sym.split("::")[0]));
     issues.push({
       severity: "WARN",
       check: "Exported symbols never called and not documented (top 100)",
@@ -70,7 +80,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
     // 4. Doc files on disk not in graph
     const localDocPaths = localFiles.filter((f) => f.ext === ".md" || f.ext === ".mdx").map((f) => f.path);
     const indexedDocsRes = await session.run(`MATCH (d:Doc) RETURN d.path AS p`);
-    const indexedDocPaths = new Set(indexedDocsRes.records.map((r) => r.get("p") as string));
+    const indexedDocPaths = new Set(
+      indexedDocsRes.records.map((r) => r.get("p") as string).filter((p) => !isNowIgnored(p)),
+    );
     const unindexedDocs = localDocPaths.filter((p) => !indexedDocPaths.has(p));
     issues.push({
       severity: "ERROR",
@@ -88,7 +100,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
       RETURN d.path AS p
       ORDER BY p
     `);
-    const isolatedDocs = isolatedRes.records.map((r) => r.get("p") as string);
+    const isolatedDocs = isolatedRes.records
+      .map((r) => r.get("p") as string)
+      .filter((p) => !isNowIgnored(p));
     issues.push({
       severity: "INFO",
       check: "Docs with no links (isolated nodes)",
@@ -104,7 +118,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
       RETURN d.path AS p, d.docType AS t
       ORDER BY p
     `);
-    const untestedDocs = untestedRes.records.map((r) => `[${r.get("t")}] ${r.get("p") as string}`);
+    const untestedDocs = untestedRes.records
+      .map((r) => `[${r.get("t")}] ${r.get("p") as string}`)
+      .filter((s) => !isNowIgnored(s.split("] ")[1]));
     issues.push({
       severity: "INFO",
       check: "Feature/task docs with no test coverage",
@@ -124,7 +140,9 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
       ORDER BY codeCount DESC
       LIMIT 50
     `);
-    const undocFolders = folderDocRes.records.map((r) => `${r.get("p") as string} (${r.get("codeCount")} code files)`);
+    const undocFolders = folderDocRes.records
+      .map((r) => `${r.get("p") as string} (${r.get("codeCount")} code files)`)
+      .filter((s) => !isNowIgnored(s.split(" (")[0]));
     issues.push({
       severity: "INFO",
       check: "Code folders with no doc targeting them (top 50)",
