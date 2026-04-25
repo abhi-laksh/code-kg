@@ -1,17 +1,21 @@
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
-import { Config, FileInfo, GraphReport, SymbolInfo } from "../types.js";
+import { Config, FileInfo, GraphReport, SymbolInfo, ImportEdge } from "../types.js";
 import { ROOT } from "../config.js";
 import { openSession } from "../graph/driver.js";
 import { walkRepo, buildFileInfo, ancestorFolders, normalizePath } from "../graph/walker.js";
 import {
-  addOrRefreshSourceFile, removeSourceFile, parseSourceFile,
+  addOrRefreshSourceFile, removeSourceFile, parseSourceFile, ParsedCode,
   parseDocs, buildSymbolIndex, resolveCallsAccurate, resolveCallsFast,
 } from "../graph/parser.js";
 import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
-  writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
+  writeSymbols, writeImports, writeImportTypes, writeCalls,
+  writeExtends, writeImplements, writeOverrides, writeDecoratedBy,
+  writeThrows, writeReferencesType, writeInstantiates,
+  writeUnionOf, writeIntersectionOf, writeReExports,
+  writeDocs, writeDocLinks, writePlanItems,
   writeDecisions, writeConstraints, deleteFile, deleteSymbolsFor,
   deleteImportsFor, deleteCallsTouching, deleteDoc, gcEmptyFolders, gcOrphanFiles,
   collectCounts, diffCounts,
@@ -153,28 +157,38 @@ export async function applyBatch(
     await writeFiles(session, changedFiles);
 
     // Re-parse changed code files.
-    const entries: { file: FileInfo; symbols: SymbolInfo[]; imports: ReturnType<typeof parseSourceFile>["imports"] }[] = [];
+    const entries: ParsedCode[] = [];
     for (const f of codeChanged) {
       const sf = addOrRefreshSourceFile(f.full);
       if (!sf) continue;
-      const { symbols, imports } = parseSourceFile(sf, f.path);
-      entries.push({ file: f, symbols, imports });
+      const result = parseSourceFile(sf, f.path);
+      entries.push({ file: f, ...result });
     }
     const newSymbols = entries.flatMap((e) => e.symbols);
-    const newImports = entries.flatMap((e) => e.imports);
     await writeSymbols(session, newSymbols);
-    await writeImports(session, newImports);
+    await writeImports(session, entries.flatMap((e) => e.imports));
+    await writeImportTypes(session, entries.flatMap((e) => e.importTypes));
+    await writeExtends(session, entries.flatMap((e) => e.extends));
+    await writeImplements(session, entries.flatMap((e) => e.implements));
+    await writeOverrides(session, entries.flatMap((e) => e.overrides));
+    await writeDecoratedBy(session, entries.flatMap((e) => e.decoratedBy));
+    await writeThrows(session, entries.flatMap((e) => e.throws));
+    await writeReferencesType(session, entries.flatMap((e) => e.referencesType));
+    await writeInstantiates(session, entries.flatMap((e) => e.instantiates));
+    await writeUnionOf(session, entries.flatMap((e) => e.unionOf));
+    await writeIntersectionOf(session, entries.flatMap((e) => e.intersectionOf));
+    await writeReExports(session, entries.flatMap((e) => e.reExports));
 
     // Recompute calls for touched + expanded caller files.
-    const callerEntries: { file: FileInfo; symbols: SymbolInfo[] }[] = [];
+    const callerEntries: ParsedCode[] = [];
     for (const p of expandedCallerFiles) {
       const full = path.join(ROOT, p);
       if (!fs.existsSync(full)) continue;
       const sf = addOrRefreshSourceFile(full);
       if (!sf) continue;
       const info = buildFileInfo(p, cfg);
-      const { symbols } = parseSourceFile(sf, p);
-      callerEntries.push({ file: info, symbols });
+      const result = parseSourceFile(sf, p);
+      callerEntries.push({ file: info, ...result });
     }
 
     // Build symbol index: newly written + caller files + global DB state.
@@ -190,8 +204,8 @@ export async function applyBatch(
     }
 
     const resolveEntries = [
-      ...entries.map((e) => ({ file: e.file, symbols: e.symbols, imports: e.imports })),
-      ...callerEntries.map((e) => ({ file: e.file, symbols: e.symbols, imports: [] as ReturnType<typeof parseSourceFile>["imports"] })),
+      ...entries,
+      ...callerEntries.map((e) => ({ ...e, imports: [] as ImportEdge[] })),
     ];
     const newCalls = fast
       ? resolveCallsFast(resolveEntries, symbolIndex)

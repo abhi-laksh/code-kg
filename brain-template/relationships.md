@@ -1,52 +1,70 @@
 # Relationships
 
-Defines all relationship (edge) types used in this knowledge graph.
-Every `[[link]]` in any doc body or frontmatter value becomes one of these edges in Neo4j.
+How `[[links]]` in your docs become edges in the knowledge graph.
 
 ---
 
-## How Links Resolve
+## Syntax
 
-The ingestion parser scans for `[[target]]` patterns. Each target is resolved in order:
+One format only:
 
-| Target format | Resolves to | Example |
+```
+[[target]]
+```
+
+`target` is either a **repo-relative file path** or a **doc `id`**.
+
+---
+
+## How It Resolves
+
+| Target | Resolves to | Edge created |
 |---|---|---|
-| Repo-relative file path | Code/file node | `[[src/auth/auth.service.ts]]` |
-| Doc `id` field value | Doc node | `[[auth-feature]]` (doc with `id: auth-feature`) |
+| `[[src/auth/auth.service.ts]]` | File node (exists on disk) | `(Doc)-[:TARGETS]->(File)` |
+| `[[auth-feature]]` | Doc with `id: auth-feature` in frontmatter | `(Doc)-[:CONNECTS]->(Doc)` |
+| `[[src/planned/new-service.ts]]` | File not yet on disk | `(File {planned: true})` + `TARGETS` |
 
-If neither lookup matches, the link is silently ignored — no edge is created.
-
-> **Code conventions:** use the exact repo-relative path for files · use the exact `id` value from the target doc's frontmatter for doc links
+> If the target doesn't look like a file path and doesn't match any doc `id` — link is dropped.
 
 ---
 
-## Edge Types (Neo4j)
+## What Gets Created in Neo4j
 
-| Edge | Direction | Meaning |
+These are the **only** edges docs produce:
+
+| Edge | From → To | When |
 |---|---|---|
-| `DEPENDS_ON` | any → any | Cannot function without the target |
-| `USED_BY` | any → feature/component | Target depends on this node |
-| `IMPLEMENTS` | task/doc → code node | This work produces that code artifact |
-| `REFERENCES_CODE` | any doc → code node | Doc mentions this code artifact |
-| `REFERENCES_DOC` | any doc → any doc | Doc links to another doc |
-| `BELONGS_TO` | any → feature | Node is scoped to this feature |
-| `HAS_TASK` | feature/subfeature → task | Feature owns this task |
-| `HAS_FLOW` | feature → flow | Feature owns this flow |
-| `HAS_ERROR` | feature → error | Feature owns this error |
-| `HAS_EDGE_CASE` | feature → edge-case | Feature owns this edge case |
-| `HAS_TEST` | feature/task → test-case | Covered by this test |
-| `BLOCKED_BY` | task → task | Task cannot proceed until target is done |
-| `SUBTASK_OF` | task → task | Parent-child task relationship |
-| `SUPERSEDES` | decision → decision | This ADR replaces another |
-| `AFFECTED_BY` | feature/code → decision | Impacted by this architectural decision |
+| `TARGETS` | Doc → File or Folder | `[[path/to/file.ts]]` resolves to existing file |
+| `TARGETS` | Doc → File `{planned: true}` | `[[path/to/file.ts]]` doesn't exist yet |
+| `CONNECTS` | Doc → Doc | `[[doc-id]]` matches another doc's `id` field |
+| `PART_OF` | PlanItem / Decision / Constraint → Doc | Auto — from checkbox lists and section headings |
+
+Code-level edges (`CALLS`, `EXTENDS`, `IMPLEMENTS`, etc.) come from source file parsing — not from doc links.
 
 ---
 
-## How Edges Are Created
+## Examples
 
-The ingestion script processes each doc in two passes:
+```markdown
+<!-- links to an existing file -->
+See [[src/auth/auth.service.ts]] for implementation.
 
-1. **Frontmatter fields** — fields like `depends_on`, `blocked_by`, `implements`, `related_test` etc. are scanned for `[[target]]` patterns and resolved into typed edges.
-2. **Body text** — all `[[target]]` occurrences in the markdown body are resolved and create `REFERENCES_CODE` or `REFERENCES_DOC` edges depending on whether the target is a file or a doc.
+<!-- links to a planned file that doesn't exist yet -->
+Will be implemented in [[src/payments/stripe.service.ts]].
 
-Ownership edges (e.g. `HAS_TASK`, `BELONGS_TO`) are derived from the doc's `parent` or `belongs_to` frontmatter fields, not from body links.
+<!-- links to another doc by its frontmatter id -->
+Depends on [[auth-feature]].
+```
+
+---
+
+## Frontmatter Links
+
+Any frontmatter field value is also scanned for `[[target]]` patterns:
+
+```yaml
+depends_on: [[src/db/connection.ts]]
+related: [[user-feature]]
+```
+
+Same resolution rules apply — field names are ignored, only the `[[target]]` inside matters.

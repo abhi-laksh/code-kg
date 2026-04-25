@@ -5,7 +5,11 @@ import { walkRepo } from "../graph/walker.js";
 import { parseCodeFiles, parseDocs, buildSymbolIndex, resolveCallsAccurate, resolveCallsFast } from "../graph/parser.js";
 import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
-  writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
+  writeSymbols, writeImports, writeImportTypes, writeCalls,
+  writeExtends, writeImplements, writeOverrides, writeDecoratedBy,
+  writeThrows, writeReferencesType, writeInstantiates,
+  writeUnionOf, writeIntersectionOf, writeReExports,
+  writeDocs, writeDocLinks, writePlanItems,
   writeDecisions, writeConstraints, gcOrphanFiles, collectCounts, diffCounts,
 } from "../graph/writer.js";
 
@@ -46,7 +50,18 @@ export async function runRebuild(cfg: Config, fast = false): Promise<GraphReport
     await writeFiles(session, files);
     await writeSymbols(session, allSymbols);
     await writeImports(session, allImports);
+    await writeImportTypes(session, entries.flatMap((e) => e.importTypes));
     await writeCalls(session, calls);
+    await writeExtends(session, entries.flatMap((e) => e.extends));
+    await writeImplements(session, entries.flatMap((e) => e.implements));
+    await writeOverrides(session, entries.flatMap((e) => e.overrides));
+    await writeDecoratedBy(session, entries.flatMap((e) => e.decoratedBy));
+    await writeThrows(session, entries.flatMap((e) => e.throws));
+    await writeReferencesType(session, entries.flatMap((e) => e.referencesType));
+    await writeInstantiates(session, entries.flatMap((e) => e.instantiates));
+    await writeUnionOf(session, entries.flatMap((e) => e.unionOf));
+    await writeIntersectionOf(session, entries.flatMap((e) => e.intersectionOf));
+    await writeReExports(session, entries.flatMap((e) => e.reExports));
     await writeDocs(session, docs);
     await writeDocLinks(session, docs);
     await writePlanItems(session, planItems);

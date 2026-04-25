@@ -96,6 +96,23 @@ program
     runNew(type, destPath);
   });
 
+// ── add-guidelines ───────────────────────────────────────────────────────────
+program
+  .command("add-guidelines [dest]")
+  .description("copy QUERY_GUIDELINES.md into the project (default: QUERY_GUIDELINES.md at root)")
+  .action((dest?: string) => {
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const { ROOT } = require("./config.js") as { ROOT: string };
+    const src = path.join(__dirname, "..", "brain-template", "QUERY_GUIDELINES.md");
+    const out = path.resolve(dest ?? path.join(ROOT, "QUERY_GUIDELINES.md"));
+    if (!fs.existsSync(src)) { console.error("[add-guidelines] source not found:", src); process.exit(1); }
+    if (fs.existsSync(out)) { console.log("[add-guidelines] already exists:", path.relative(ROOT, out)); return; }
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.copyFileSync(src, out);
+    console.log("[add-guidelines] created:", path.relative(ROOT, out));
+  });
+
 // ── review ────────────────────────────────────────────────────────────────────
 program
   .command("review")

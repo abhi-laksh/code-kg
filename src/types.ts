@@ -30,12 +30,23 @@ export interface FileInfo {
 
 export interface SymbolInfo {
   name: string;
-  kind: "function" | "class" | "method" | "interface" | "type" | "enum" | "const";
+  kind: "function" | "class" | "method" | "interface" | "type" | "enum" | "const" | "property";
   file: string;
   startLine: number;
   endLine: number;
   signature: string;
   isExported: boolean;
+  // enriched
+  parentName?: string;        // class name for methods/properties
+  jsdoc?: string;
+  async?: boolean;
+  abstract?: boolean;
+  static?: boolean;
+  visibility?: "public" | "private" | "protected";
+  returnType?: string;
+  parameters?: string;        // JSON: [{name,type,optional,default}]
+  genericParams?: string;     // "T extends Entity, K"
+  decoratorNames?: string[];
 }
 
 export interface ImportEdge {
@@ -54,12 +65,28 @@ export interface CallEdge {
   to: SymbolKey;
 }
 
+/** Generic symbol → symbol edge — reused for all new relationship types */
+export interface SymbolEdge {
+  from: SymbolKey;
+  to: SymbolKey;
+}
+
+/** File re-exports a symbol sourced from another module */
+export interface ReExportsEdge {
+  file: string;
+  symbol: SymbolKey;
+}
+
+/** Type-only import (import type { X }) — same shape as ImportEdge */
+export type ImportTypeEdge = ImportEdge;
+
 export interface DocInfo {
   path: string;
   title: string;
   summary: string;
   scope: string;
   targetPaths: string[];
+  plannedPaths: string[];   // path refs in doc that don't exist on disk yet → File{planned:true}
   docLinks: string[];
   id?: string;
   docType?: string;
@@ -116,8 +143,19 @@ export interface GraphCounts {
   Decision: number;
   Constraint: number;
   IMPORTS: number;
+  IMPORTS_TYPE: number;
   CALLS: number;
   CONNECTS: number;
+  EXTENDS: number;
+  IMPLEMENTS: number;
+  OVERRIDES: number;
+  DECORATED_BY: number;
+  THROWS: number;
+  REFERENCES_TYPE: number;
+  INSTANTIATES: number;
+  UNION_OF: number;
+  INTERSECTION_OF: number;
+  RE_EXPORTS: number;
 }
 
 export interface GraphReport {

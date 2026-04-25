@@ -1,7 +1,11 @@
 import fs from "fs";
 import path from "path";
-import { Project, SyntaxKind, ts, Node } from "ts-morph";
-import { Config, FileInfo, SymbolInfo, ImportEdge, CallEdge, SymbolKey, DocInfo, PlanItem, Decision, Constraint, ParsedDocs } from "../types.js";
+import { Project, SyntaxKind, ts, Node, Scope } from "ts-morph";
+import {
+  Config, FileInfo, SymbolInfo, ImportEdge, CallEdge, SymbolKey,
+  SymbolEdge, ReExportsEdge, ImportTypeEdge,
+  DocInfo, PlanItem, Decision, Constraint, ParsedDocs,
+} from "../types.js";
 import { ROOT } from "../config.js";
 import { normalizePath } from "./walker.js";
 
@@ -101,23 +105,119 @@ export function resolveImport(fromFile: string, specifier: string): { target: st
   return { target: specifier, external: true };
 }
 
-// ── code parser ───────────────────────────────────────────────────────────────
+// ── symbol-edge helpers ───────────────────────────────────────────────────────
 
-export interface ParsedCode {
-  file: FileInfo;
-  symbols: SymbolInfo[];
-  imports: ImportEdge[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function declToKey(decl: any): SymbolKey | null {
+  const sf = decl.getSourceFile();
+  const file = normalizePath(path.relative(ROOT, sf.getFilePath()));
+  const name = (decl.getNameNode?.()?.getText() as string | undefined) ?? (decl.getName?.() as string | undefined) ?? null;
+  if (!name) return null;
+  return { file, name, startLine: decl.getStartLineNumber() as number };
 }
 
-export function parseSourceFile(sf: ReturnType<typeof addOrRefreshSourceFile>, relPath: string): { symbols: SymbolInfo[]; imports: ImportEdge[] } {
-  if (!sf) return { symbols: [], imports: [] };
+function dedupeSymbolEdges(edges: SymbolEdge[]): SymbolEdge[] {
+  const seen = new Set<string>();
+  return edges.filter((e) => {
+    const k = `${e.from.file}|${e.from.name}|${e.from.startLine}→${e.to.file}|${e.to.name}|${e.to.startLine}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** Resolve an expression node to a SymbolKey via the type checker */
+function resolveExprToKey(expr: Node): SymbolKey | null {
+  try {
+    const sym = expr.getSymbol();
+    if (!sym) return null;
+    const decls = sym.getDeclarations?.() ?? [];
+    if (!decls.length) return null;
+    return declToKey(decls[0]);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract type references from a type node — parameters, return types, property types.
+ * NOT full body scan; restricted to signature/declaration types only.
+ */
+function extractTypeRefs(typeNode: Node | undefined): SymbolKey[] {
+  if (!typeNode) return [];
+  const refs: SymbolKey[] = [];
+  try {
+    for (const ref of typeNode.getDescendantsOfKind(SyntaxKind.TypeReference)) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nameNode = (ref as any).getTypeName?.();
+        if (!nameNode) continue;
+        const sym = nameNode.getSymbol?.();
+        if (!sym) continue;
+        const decls = sym.getDeclarations?.() ?? [];
+        if (!decls.length) continue;
+        const key = declToKey(decls[0]);
+        if (key) refs.push(key);
+      } catch { /* skip unresolvable */ }
+    }
+  } catch { /* skip */ }
+  return refs;
+}
+
+// ── code parser ───────────────────────────────────────────────────────────────
+
+export interface ParseSourceFileResult {
+  symbols: SymbolInfo[];
+  imports: ImportEdge[];
+  importTypes: ImportTypeEdge[];
+  extends: SymbolEdge[];
+  implements: SymbolEdge[];
+  overrides: SymbolEdge[];
+  decoratedBy: SymbolEdge[];
+  throws: SymbolEdge[];
+  referencesType: SymbolEdge[];
+  instantiates: SymbolEdge[];
+  unionOf: SymbolEdge[];
+  intersectionOf: SymbolEdge[];
+  reExports: ReExportsEdge[];
+}
+
+export interface ParsedCode extends ParseSourceFileResult {
+  file: FileInfo;
+}
+
+export function parseSourceFile(
+  sf: ReturnType<typeof addOrRefreshSourceFile>,
+  relPath: string,
+): ParseSourceFileResult {
+  if (!sf) return {
+    symbols: [], imports: [], importTypes: [],
+    extends: [], implements: [], overrides: [], decoratedBy: [],
+    throws: [], referencesType: [], instantiates: [],
+    unionOf: [], intersectionOf: [], reExports: [],
+  };
 
   const symbols: SymbolInfo[] = [];
   const imports: ImportEdge[] = [];
+  const importTypes: ImportTypeEdge[] = [];
+  const extendsEdges: SymbolEdge[] = [];
+  const implementsEdges: SymbolEdge[] = [];
+  const overridesEdges: SymbolEdge[] = [];
+  const decoratedByEdges: SymbolEdge[] = [];
+  const throwsEdges: SymbolEdge[] = [];
+  const referencesTypeEdges: SymbolEdge[] = [];
+  const instantiatesEdges: SymbolEdge[] = [];
+  const unionOfEdges: SymbolEdge[] = [];
+  const intersectionOfEdges: SymbolEdge[] = [];
+  const reExportsEdges: ReExportsEdge[] = [];
+
+  // ── imports ───────────────────────────────────────────────────────────────
 
   for (const imp of sf.getImportDeclarations()) {
     const spec = imp.getModuleSpecifierValue();
-    if (spec) imports.push({ from: relPath, to: spec });
+    if (!spec) continue;
+    if (imp.isTypeOnly()) importTypes.push({ from: relPath, to: spec });
+    else imports.push({ from: relPath, to: spec });
   }
   for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const callee = call.getExpression();
@@ -130,37 +230,335 @@ export function parseSourceFile(sf: ReturnType<typeof addOrRefreshSourceFile>, r
     }
   }
 
-  const push = (name: string | undefined, kind: SymbolInfo["kind"], node: { getStartLineNumber(): number; getEndLineNumber(): number; getText(): string }, isExported = false) => {
+  // ── re-exports ────────────────────────────────────────────────────────────
+
+  for (const exp of sf.getExportDeclarations()) {
+    if (!exp.hasModuleSpecifier()) continue;
+    for (const named of exp.getNamedExports()) {
+      try {
+        const sym = named.getNameNode().getSymbol();
+        if (!sym) continue;
+        const aliasedSym = sym.getAliasedSymbol() ?? sym;
+        const decls = aliasedSym.getDeclarations?.() ?? [];
+        if (!decls.length) continue;
+        const key = declToKey(decls[0]);
+        if (key) reExportsEdges.push({ file: relPath, symbol: key });
+      } catch { /* skip */ }
+    }
+  }
+
+  // ── symbol push helper ────────────────────────────────────────────────────
+
+  const mkSym = (
+    name: string | undefined,
+    kind: SymbolInfo["kind"],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    node: any,
+    isExported = false,
+    extras: Partial<SymbolInfo> = {},
+  ): void => {
     if (!name) return;
-    symbols.push({ name, kind, file: relPath, startLine: node.getStartLineNumber(), endLine: node.getEndLineNumber(), signature: oneLiner(node.getText().split("\n")[0] ?? name), isExported });
+    symbols.push({
+      name, kind, file: relPath,
+      startLine: node.getStartLineNumber(),
+      endLine: node.getEndLineNumber(),
+      signature: oneLiner((node.getText() as string).split("\n")[0] ?? name),
+      isExported,
+      ...extras,
+    });
   };
 
-  for (const fn of sf.getFunctions()) push(fn.getName(), "function", fn, fn.isExported());
-  for (const cls of sf.getClasses()) {
-    push(cls.getName(), "class", cls, cls.isExported());
-    for (const m of cls.getMethods()) push(m.getName(), "method", m, false);
+  // helpers to collect throws/instantiates from a body node
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const collectThrows = (bodyNode: any, fromKey: SymbolKey) => {
+    try {
+      for (const stmt of bodyNode.getDescendantsOfKind(SyntaxKind.ThrowStatement)) {
+        const expr = stmt.getExpression();
+        if (Node.isNewExpression(expr)) {
+          const key = resolveExprToKey(expr.getExpression());
+          if (key) throwsEdges.push({ from: fromKey, to: key });
+        }
+      }
+    } catch { /* skip */ }
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const collectInstantiates = (bodyNode: any, fromKey: SymbolKey) => {
+    try {
+      for (const newExpr of bodyNode.getDescendantsOfKind(SyntaxKind.NewExpression)) {
+        const key = resolveExprToKey(newExpr.getExpression());
+        if (key) instantiatesEdges.push({ from: fromKey, to: key });
+      }
+    } catch { /* skip */ }
+  };
+
+  // ── functions ─────────────────────────────────────────────────────────────
+
+  for (const fn of sf.getFunctions()) {
+    const name = fn.getName();
+    if (!name) continue;
+    const params = fn.getParameters().map((p) => ({
+      name: p.getName(),
+      type: p.getTypeNode()?.getText() ?? null,
+      optional: p.isOptional(),
+      default: p.getInitializer()?.getText() ?? null,
+    }));
+    mkSym(name, "function", fn, fn.isExported(), {
+      jsdoc: fn.getJsDocs()[0]?.getDescription()?.trim() || undefined,
+      async: fn.isAsync() || undefined,
+      returnType: fn.getReturnTypeNode()?.getText(),
+      parameters: params.length ? JSON.stringify(params) : undefined,
+      genericParams: fn.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+    });
+    const fromKey: SymbolKey = { file: relPath, name, startLine: fn.getStartLineNumber() };
+    for (const ref of extractTypeRefs(fn.getReturnTypeNode())) referencesTypeEdges.push({ from: fromKey, to: ref });
+    for (const p of fn.getParameters()) for (const ref of extractTypeRefs(p.getTypeNode())) referencesTypeEdges.push({ from: fromKey, to: ref });
+    collectThrows(fn, fromKey);
+    collectInstantiates(fn, fromKey);
   }
-  for (const iface of sf.getInterfaces()) push(iface.getName(), "interface", iface, iface.isExported());
-  for (const t of sf.getTypeAliases()) push(t.getName(), "type", t, t.isExported());
-  for (const e of sf.getEnums()) push(e.getName(), "enum", e, e.isExported());
+
+  // ── classes ───────────────────────────────────────────────────────────────
+
+  for (const cls of sf.getClasses()) {
+    const className = cls.getName();
+    if (!className) continue;
+    const classKey: SymbolKey = { file: relPath, name: className, startLine: cls.getStartLineNumber() };
+    const decNames = cls.getDecorators().map((d) => d.getName()).filter(Boolean) as string[];
+
+    mkSym(className, "class", cls, cls.isExported(), {
+      jsdoc: cls.getJsDocs()[0]?.getDescription()?.trim() || undefined,
+      abstract: cls.isAbstract() || undefined,
+      genericParams: cls.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+      decoratorNames: decNames.length ? decNames : undefined,
+    });
+
+    // EXTENDS
+    try {
+      const ext = cls.getExtends();
+      if (ext) {
+        const key = resolveExprToKey(ext.getExpression());
+        if (key) extendsEdges.push({ from: classKey, to: key });
+      }
+    } catch { /* skip */ }
+
+    // IMPLEMENTS
+    try {
+      for (const impl of cls.getImplements()) {
+        const key = resolveExprToKey(impl.getExpression());
+        if (key) implementsEdges.push({ from: classKey, to: key });
+      }
+    } catch { /* skip */ }
+
+    // DECORATED_BY
+    for (const dec of cls.getDecorators()) {
+      try {
+        const key = resolveExprToKey(dec.getExpression());
+        if (key) decoratedByEdges.push({ from: classKey, to: key });
+      } catch { /* skip */ }
+    }
+
+    // Methods
+    for (const m of cls.getMethods()) {
+      const mName = m.getName();
+      const mScope = m.getScope() ?? Scope.Public;
+      const vis = mScope === Scope.Private ? "private" : mScope === Scope.Protected ? "protected" : undefined;
+      const methodKey: SymbolKey = { file: relPath, name: mName, startLine: m.getStartLineNumber() };
+      const mDecNames = m.getDecorators().map((d) => d.getName()).filter(Boolean) as string[];
+      const mParams = m.getParameters().map((p) => ({
+        name: p.getName(),
+        type: p.getTypeNode()?.getText() ?? null,
+        optional: p.isOptional(),
+        default: p.getInitializer()?.getText() ?? null,
+      }));
+
+      mkSym(mName, "method", m, false, {
+        parentName: className,
+        jsdoc: m.getJsDocs()[0]?.getDescription()?.trim() || undefined,
+        async: m.isAsync() || undefined,
+        abstract: m.isAbstract() || undefined,
+        static: m.isStatic() || undefined,
+        visibility: vis,
+        returnType: m.getReturnTypeNode()?.getText(),
+        parameters: mParams.length ? JSON.stringify(mParams) : undefined,
+        genericParams: m.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+        decoratorNames: mDecNames.length ? mDecNames : undefined,
+      });
+
+      // OVERRIDES
+      try {
+        const baseClass = cls.getBaseClass();
+        if (baseClass) {
+          const baseMethod = baseClass.getMethod(mName);
+          if (baseMethod) {
+            const toKey = declToKey(baseMethod);
+            if (toKey) overridesEdges.push({ from: methodKey, to: toKey });
+          }
+        }
+      } catch { /* skip */ }
+
+      // DECORATED_BY
+      for (const dec of m.getDecorators()) {
+        try {
+          const key = resolveExprToKey(dec.getExpression());
+          if (key) decoratedByEdges.push({ from: methodKey, to: key });
+        } catch { /* skip */ }
+      }
+
+      // REFERENCES_TYPE: params + return (signature only)
+      for (const ref of extractTypeRefs(m.getReturnTypeNode())) referencesTypeEdges.push({ from: methodKey, to: ref });
+      for (const p of m.getParameters()) for (const ref of extractTypeRefs(p.getTypeNode())) referencesTypeEdges.push({ from: methodKey, to: ref });
+
+      collectThrows(m, methodKey);
+      collectInstantiates(m, methodKey);
+    }
+
+    // Properties
+    for (const prop of cls.getProperties()) {
+      const propName = prop.getName();
+      const pScope = prop.getScope() ?? Scope.Public;
+      const pVis = pScope === Scope.Private ? "private" : pScope === Scope.Protected ? "protected" : undefined;
+      const propKey: SymbolKey = { file: relPath, name: propName, startLine: prop.getStartLineNumber() };
+
+      mkSym(propName, "property", prop, false, {
+        parentName: className,
+        static: prop.isStatic() || undefined,
+        visibility: pVis,
+        returnType: prop.getTypeNode()?.getText(),
+      });
+
+      for (const ref of extractTypeRefs(prop.getTypeNode())) referencesTypeEdges.push({ from: propKey, to: ref });
+    }
+  }
+
+  // ── interfaces ────────────────────────────────────────────────────────────
+
+  for (const iface of sf.getInterfaces()) {
+    const ifName = iface.getName();
+    const ifKey: SymbolKey = { file: relPath, name: ifName, startLine: iface.getStartLineNumber() };
+
+    mkSym(ifName, "interface", iface, iface.isExported(), {
+      jsdoc: iface.getJsDocs()[0]?.getDescription()?.trim() || undefined,
+      genericParams: iface.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+    });
+
+    try {
+      for (const base of iface.getExtends()) {
+        const key = resolveExprToKey(base.getExpression());
+        if (key) extendsEdges.push({ from: ifKey, to: key });
+      }
+    } catch { /* skip */ }
+  }
+
+  // ── type aliases ──────────────────────────────────────────────────────────
+
+  for (const t of sf.getTypeAliases()) {
+    const tName = t.getName();
+    const tKey: SymbolKey = { file: relPath, name: tName, startLine: t.getStartLineNumber() };
+
+    mkSym(tName, "type", t, t.isExported(), {
+      jsdoc: t.getJsDocs()[0]?.getDescription()?.trim() || undefined,
+      genericParams: t.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+    });
+
+    try {
+      const typeNode = t.getTypeNode();
+      if (!typeNode) continue;
+      if (Node.isUnionTypeNode(typeNode)) {
+        for (const member of typeNode.getTypeNodes()) {
+          if (Node.isTypeReference(member)) {
+            const key = resolveExprToKey((member as unknown as Node));
+            if (!key) {
+              // fallback: resolve via getTypeName
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const nameNode = (member as any).getTypeName?.();
+                const sym = nameNode?.getSymbol?.();
+                const decls = sym?.getDeclarations?.() ?? [];
+                const k = decls[0] ? declToKey(decls[0]) : null;
+                if (k) unionOfEdges.push({ from: tKey, to: k });
+              } catch { /* skip */ }
+            } else {
+              unionOfEdges.push({ from: tKey, to: key });
+            }
+          }
+        }
+      } else if (Node.isIntersectionTypeNode(typeNode)) {
+        for (const member of typeNode.getTypeNodes()) {
+          if (Node.isTypeReference(member)) {
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const nameNode = (member as any).getTypeName?.();
+              const sym = nameNode?.getSymbol?.();
+              const decls = sym?.getDeclarations?.() ?? [];
+              const k = decls[0] ? declToKey(decls[0]) : null;
+              if (k) intersectionOfEdges.push({ from: tKey, to: k });
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  // ── enums ─────────────────────────────────────────────────────────────────
+
+  for (const e of sf.getEnums()) mkSym(e.getName(), "enum", e, e.isExported());
+
+  // ── variable statements ───────────────────────────────────────────────────
+
   for (const vs of sf.getVariableStatements()) {
     const isExp = vs.isExported();
     for (const d of vs.getDeclarations()) {
       const init = d.getInitializer();
       const isFn = init && (init.getKind() === SyntaxKind.ArrowFunction || init.getKind() === SyntaxKind.FunctionExpression);
-      push(d.getName(), isFn ? "function" : "const", d, isExp);
+      const name = d.getName();
+      if (isFn && init) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fn = init as any;
+        const params = fn.getParameters?.()?.map((p: any) => ({
+          name: p.getName?.() ?? "",
+          type: p.getTypeNode?.()?.getText() ?? null,
+          optional: p.isOptional?.() ?? false,
+          default: p.getInitializer?.()?.getText() ?? null,
+        })) ?? [];
+        mkSym(name, "function", d, isExp, {
+          async: fn.isAsync?.() || undefined,
+          returnType: fn.getReturnTypeNode?.()?.getText(),
+          parameters: params.length ? JSON.stringify(params) : undefined,
+        });
+        const fromKey: SymbolKey = { file: relPath, name, startLine: d.getStartLineNumber() };
+        for (const ref of extractTypeRefs(fn.getReturnTypeNode?.())) referencesTypeEdges.push({ from: fromKey, to: ref });
+        for (const p of fn.getParameters?.() ?? []) for (const ref of extractTypeRefs(p.getTypeNode?.())) referencesTypeEdges.push({ from: fromKey, to: ref });
+        collectThrows(fn, fromKey);
+        collectInstantiates(fn, fromKey);
+      } else {
+        mkSym(name, "const", d, isExp);
+      }
     }
   }
 
-  return { symbols, imports };
+  return {
+    symbols,
+    imports,
+    importTypes,
+    extends: dedupeSymbolEdges(extendsEdges),
+    implements: dedupeSymbolEdges(implementsEdges),
+    overrides: dedupeSymbolEdges(overridesEdges),
+    decoratedBy: dedupeSymbolEdges(decoratedByEdges),
+    throws: dedupeSymbolEdges(throwsEdges),
+    referencesType: dedupeSymbolEdges(referencesTypeEdges),
+    instantiates: dedupeSymbolEdges(instantiatesEdges),
+    unionOf: dedupeSymbolEdges(unionOfEdges),
+    intersectionOf: dedupeSymbolEdges(intersectionOfEdges),
+    reExports: reExportsEdges,
+  };
 }
 
 export function parseCodeFiles(fileInfos: FileInfo[]): ParsedCode[] {
   return fileInfos.flatMap((f) => {
     const sf = addOrRefreshSourceFile(f.full);
     if (!sf) return [];
-    const { symbols, imports } = parseSourceFile(sf, f.path);
-    return [{ file: f, symbols, imports }];
+    const result = parseSourceFile(sf, f.path);
+    return [{ file: f, ...result }];
   });
 }
 
@@ -176,15 +574,6 @@ export function buildSymbolIndex(symbols: SymbolInfo[]): SymbolIndex {
 
 function findByName(idx: SymbolIndex, file: string, name: string): SymbolInfo | undefined {
   for (const s of idx.values()) if (s.file === file && s.name === name) return s;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function declToKey(decl: any): SymbolKey | null {
-  const sf = decl.getSourceFile();
-  const file = normalizePath(path.relative(ROOT, sf.getFilePath()));
-  const name = (decl.getNameNode?.()?.getText() as string | undefined) ?? (decl.getName?.() as string | undefined) ?? null;
-  if (!name) return null;
-  return { file, name, startLine: decl.getStartLineNumber() as number };
 }
 
 function dedupeEdges(calls: CallEdge[]): CallEdge[] {
@@ -328,14 +717,21 @@ function extractWikiTargets(text: string): string[] {
   return targets;
 }
 
+const PLANNED_PATH_RE = /(?:\/|\\|\.)(?:[a-z0-9_\-]+\.)+[a-z]{1,6}$/i;
+
+function looksLikePath(target: string): boolean {
+  return target.includes("/") || PLANNED_PATH_RE.test(target);
+}
+
 function resolveWikiLink(
   target: string,
   docIdIndex: Map<string, string>,
   pathSet: Set<string>,
-): { kind: "doc" | "code"; path: string } | null {
+): { kind: "doc" | "code" | "planned"; path: string } | null {
   if (pathSet.has(target)) return { kind: "code", path: target };
   const docPath = docIdIndex.get(target);
   if (docPath) return { kind: "doc", path: docPath };
+  if (looksLikePath(target)) return { kind: "planned", path: target };
   return null;
 }
 
@@ -464,7 +860,6 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
   const decisions: Decision[] = [];
   const constraints: Constraint[] = [];
 
-  // Pass 1: build id→path index from frontmatter
   const docIdIndex = new Map<string, string>();
   const parsedFiles = new Map<string, { content: string; fields: Record<string, FrontmatterValue>; body: string }>();
   for (const f of docFiles) {
@@ -476,7 +871,6 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
     if (id) docIdIndex.set(id, f.path);
   }
 
-  // Pass 2: parse each doc with resolved wiki links
   for (const f of docFiles) {
     const parsed = parsedFiles.get(f.path);
     if (!parsed) continue;
@@ -487,32 +881,27 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
     const scope = extractScope(f.path, cfg.docScopeParents);
     const targetPaths = extractTargetPaths(body || content, f.path, pathSet, bareRx);
 
-    // collect all [[targets]] from body + frontmatter values, resolve each
     const allWikiTargets = [
       ...extractWikiTargets(body || content),
       ...collectFrontmatterLinkTargets(fields),
     ];
     const docLinks: string[] = [];
+    const plannedPaths: string[] = [];
     for (const target of allWikiTargets) {
       const resolved = resolveWikiLink(target, docIdIndex, pathSet);
       if (!resolved) continue;
       if (resolved.kind === "doc") { if (!docLinks.includes(resolved.path)) docLinks.push(resolved.path); }
+      else if (resolved.kind === "planned") { if (!plannedPaths.includes(resolved.path)) plannedPaths.push(resolved.path); }
       else { if (!targetPaths.includes(resolved.path)) targetPaths.push(resolved.path); }
     }
 
-    // split frontmatter into well-known fields vs meta
     const meta: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(fields)) {
       if (!KNOWN_META_KEYS.has(k)) meta[k] = v;
     }
 
     docs.push({
-      path: f.path,
-      title,
-      summary,
-      scope,
-      targetPaths,
-      docLinks,
+      path: f.path, title, summary, scope, targetPaths, plannedPaths, docLinks,
       id: typeof fields.id === "string" && fields.id ? fields.id : undefined,
       docType: typeof fields.type === "string" && fields.type ? fields.type : undefined,
       name: typeof fields.name === "string" && fields.name ? fields.name : undefined,
@@ -540,8 +929,8 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
     const sections = splitSections(content);
     const decSections = pickSections(sections, [/^(\d+\.\s+)?decisions?$/i, /^(\d+\.\s+)?architecture decisions?$/i, /^(\d+\.\s+)?adr\b/i]);
     let decIdx = 0;
-    for (const body of decSections) {
-      for (const bullet of extractBullets(body)) {
+    for (const secBody of decSections) {
+      for (const bullet of extractBullets(secBody)) {
         const [head, ...rest] = bullet.split(/\s+[—:-]\s+/);
         decisions.push({ doc: f.path, index: decIdx++, title: oneLiner(head, 180), reason: oneLiner(rest.join(" — "), 400), scope, targetPaths: extractPathRefs(bullet, pathSet, f.path, bareRx) });
       }
@@ -549,8 +938,8 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
 
     const conSections = pickSections(sections, [/^(\d+\.\s+)?constraints?$/i, /^(\d+\.\s+)?non-?goals?$/i, /^(\d+\.\s+)?rules?$/i]);
     let conIdx = 0;
-    for (const body of conSections) {
-      for (const bullet of extractBullets(body)) {
+    for (const secBody of conSections) {
+      for (const bullet of extractBullets(secBody)) {
         constraints.push({ doc: f.path, index: conIdx++, text: oneLiner(bullet, 400), severity: detectSeverity(bullet), scope, targetPaths: extractPathRefs(bullet, pathSet, f.path, bareRx) });
       }
     }

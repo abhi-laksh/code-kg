@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import ignore, { Ignore } from "ignore";
 import { Config, FileInfo } from "../types.js";
 import { ROOT } from "../config.js";
 
@@ -9,99 +10,22 @@ export function normalizePath(p: string): string {
   return p.split(path.sep).join("/");
 }
 
-function escapeRegex(v: string): string {
-  return v.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-}
+// ── ignore engine (gitignore + .codekgignore via `ignore` pkg) ────────────────
 
-function globToRegExp(pattern: string): RegExp {
-  let out = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    const next = pattern[i + 1];
-    if (c === "*") {
-      if (next === "*") {
-        out += ".*";
-        i++;
-        if (pattern[i + 1] === "/") i++;
-      } else {
-        out += "[^/]*";
-      }
-    } else if (c === "?") {
-      out += "[^/]";
-    } else if (c === "/") {
-      out += "\\/";
-    } else {
-      out += escapeRegex(c);
-    }
+function buildIgnoreEngine(): Ignore {
+  const ig = ignore();
+  for (const name of [".gitignore", ".codekgignore"]) {
+    const p = path.join(ROOT, name);
+    if (fs.existsSync(p)) ig.add(fs.readFileSync(p, "utf-8"));
   }
-  return new RegExp(out + "$");
+  return ig;
 }
 
-// ── gitignore ─────────────────────────────────────────────────────────────────
-
-interface GitignoreRule {
-  negate: boolean;
-  raw: string;
-  anchored: boolean;
-  directoryOnly: boolean;
-  regex: RegExp;
-  normalizedSource: string;
-}
-
-function parseIgnoreFile(filePath: string): GitignoreRule[] {
-  if (!fs.existsSync(filePath)) return [];
-  return fs
-    .readFileSync(filePath, "utf-8")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("#"))
-    .map((l) => {
-      const negate = l.startsWith("!");
-      const raw = negate ? l.slice(1) : l;
-      const norm = normalizePath(raw);
-      const directoryOnly = norm.endsWith("/");
-      const source = directoryOnly ? norm.slice(0, -1) : norm;
-      // gitignore spec: pattern with "/" anywhere (except trailing) is anchored to repo root.
-      const hasLeadingSlash = source.startsWith("/");
-      const stripped = hasLeadingSlash ? source.slice(1) : source;
-      const anchored = hasLeadingSlash || (stripped.includes("/") && !stripped.startsWith("**/"));
-      return { negate, raw, anchored, directoryOnly, regex: globToRegExp(stripped), normalizedSource: stripped };
-    });
-}
-
-function loadGitignoreRules(): GitignoreRule[] {
-  return [
-    ...parseIgnoreFile(path.join(ROOT, ".gitignore")),
-    ...parseIgnoreFile(path.join(ROOT, ".codekgignore")),
-  ];
-}
-
-export function buildIgnoreMatcher(rules: GitignoreRule[]): (relPath: string) => boolean {
-  return function isIgnored(relPath: string): boolean {
-    const normalized = normalizePath(relPath);
-    const parts = normalized.split("/");
-    let ignored = false;
-    for (const rule of rules) {
-      const candidates: string[] = [];
-      if (rule.anchored) {
-        candidates.push(normalized);
-      } else {
-        candidates.push(normalized, ...parts);
-        for (let i = 1; i < parts.length; i++) candidates.push(parts.slice(i).join("/"));
-      }
-      const matched = candidates.some((c) => {
-        if (!c) return false;
-        if (rule.directoryOnly || rule.anchored) {
-          // exact match OR child of this path OR regex match
-          return c === rule.normalizedSource
-            || c.startsWith(`${rule.normalizedSource}/`)
-            || rule.regex.test(c);
-        }
-        return rule.regex.test(c);
-      });
-      if (matched) ignored = !rule.negate;
-    }
-    return ignored;
+export function buildIgnoreMatcher(ig: Ignore): (relPath: string) => boolean {
+  return (relPath: string) => {
+    const norm = normalizePath(relPath);
+    if (!norm || norm === ".") return false;
+    return ig.ignores(norm);
   };
 }
 
@@ -173,8 +97,8 @@ export interface WalkResult {
 }
 
 export function walkRepo(cfg: Config): WalkResult {
-  const rules = loadGitignoreRules();
-  const isIgnored = buildIgnoreMatcher(rules);
+  const ig = buildIgnoreEngine();
+  const isIgnored = buildIgnoreMatcher(ig);
   const entryPatterns = buildEntryPatterns(cfg);
   const ignoreSet = new Set(cfg.ignoreDirs);
   const folders: string[] = [];
