@@ -31,10 +31,8 @@ async function pruneIgnoredFromGraph(
   const isNowIgnored = (p: string) =>
     isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg));
 
-  const [fileRes, docRes] = await Promise.all([
-    session.run(`MATCH (f:File) RETURN f.path AS p`),
-    session.run(`MATCH (d:Doc)  RETURN d.path AS p`),
-  ]);
+  const fileRes = await session.run(`MATCH (f:File) RETURN f.path AS p`);
+  const docRes  = await session.run(`MATCH (d:Doc)  RETURN d.path AS p`);
 
   const toRemoveFiles = fileRes.records.map((r) => r.get("p") as string).filter(isNowIgnored);
   const toRemoveDocs  = docRes.records.map((r) => r.get("p") as string).filter(isNowIgnored);
