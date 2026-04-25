@@ -13,7 +13,7 @@ import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
   writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
   writeDecisions, writeConstraints, deleteFile, deleteSymbolsFor,
-  deleteImportsFor, deleteCallsTouching, deleteDoc, gcEmptyFolders,
+  deleteImportsFor, deleteCallsTouching, deleteDoc, gcEmptyFolders, gcOrphanFiles,
   collectCounts, diffCounts,
 } from "../graph/writer.js";
 import { unwrapRecord } from "../graph/driver.js";
@@ -34,12 +34,12 @@ function detectChangedPaths(): string[] {
   }
 }
 
-export async function runSync(inputPaths: string[], cfg: Config, fast = false): Promise<GraphReport> {
+export async function runSync(inputPaths: string[], cfg: Config, fast = false): Promise<GraphReport | null> {
   if (!inputPaths.length) {
     const detected = detectChangedPaths();
     if (!detected.length) {
       console.log("[sync] no changed files detected — nothing to sync");
-      process.exit(0);
+      return null;
     }
     inputPaths = detected;
   }
@@ -177,6 +177,7 @@ export async function applyBatch(
     await writeConstraints(session, constraints);
 
     await gcEmptyFolders(session);
+    await gcOrphanFiles(session);
 
     const countsAfter = await collectCounts(session);
     const report: GraphReport = {

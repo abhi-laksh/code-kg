@@ -37,7 +37,7 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
     // 2. Code files with no doc targeting them
     const noDocRes = await session.run(`
       MATCH (f:File)
-      WHERE f.kind = 'code' AND NOT (f)<-[:TARGETS]-(:Doc)
+      WHERE f.kind IN ['source', 'test'] AND NOT (f)<-[:TARGETS]-(:Doc)
       RETURN f.path AS p
       ORDER BY p
     `);
@@ -100,8 +100,7 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
     const untestedRes = await session.run(`
       MATCH (d:Doc)
       WHERE d.docType IN ['feature', 'task']
-        AND NOT (d)-[:HAS_TEST]->()
-        AND NOT EXISTS { MATCH (d)-[:TARGETS]->(t:Doc {docType: 'test'}) }
+        AND NOT EXISTS { MATCH (d)-[:CONNECTS]->(t:Doc {docType: 'test'}) }
       RETURN d.path AS p, d.docType AS t
       ORDER BY p
     `);
@@ -116,7 +115,7 @@ export async function runReview(cfg: Config, asJson = false): Promise<void> {
     // 7. Code folders with no doc in that scope
     const folderDocRes = await session.run(`
       MATCH (folder:Folder)-[:CONTAINS*1..]->(f:File)
-      WHERE f.kind = 'code'
+      WHERE f.kind IN ['source', 'test']
       WITH folder, count(f) AS codeCount
       WHERE codeCount > 0
         AND NOT (folder)<-[:TARGETS]-(:Doc)

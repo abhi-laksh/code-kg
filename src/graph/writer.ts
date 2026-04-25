@@ -280,8 +280,21 @@ export async function deleteDoc(session: Session, p: string): Promise<void> {
 }
 
 export async function gcEmptyFolders(session: Session): Promise<void> {
+  // Loop until stable — single pass misses parent folders whose only child was just deleted.
+  let deleted = 1;
+  while (deleted > 0) {
+    const res = await session.run(
+      `MATCH (d:Folder) WHERE d.path <> "." AND NOT (d)-[:CONTAINS]->() DETACH DELETE d`,
+    );
+    deleted = res.summary.counters.updates().nodesDeleted;
+  }
+}
+
+export async function gcOrphanFiles(session: Session): Promise<void> {
+  // File nodes with no incoming CONTAINS edge were never written by writeFiles (i.e. stubs
+  // created by writeImports for import targets outside the indexed scope). Safe to delete.
   await session.run(
-    `MATCH (d:Folder) WHERE d.path <> "." AND NOT (d)-[:CONTAINS]->() DETACH DELETE d`,
+    `MATCH (f:File) WHERE NOT ()-[:CONTAINS]->(f) DETACH DELETE f`,
   );
 }
 

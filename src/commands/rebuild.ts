@@ -6,7 +6,7 @@ import { parseCodeFiles, parseDocs, buildSymbolIndex, resolveCallsAccurate, reso
 import {
   ensureSchema, ensureProjectRoot, writeFolders, writeFiles,
   writeSymbols, writeImports, writeCalls, writeDocs, writeDocLinks, writePlanItems,
-  writeDecisions, writeConstraints, collectCounts, diffCounts,
+  writeDecisions, writeConstraints, gcOrphanFiles, collectCounts, diffCounts,
 } from "../graph/writer.js";
 
 export async function runRebuild(cfg: Config, fast = false): Promise<GraphReport> {
@@ -52,6 +52,7 @@ export async function runRebuild(cfg: Config, fast = false): Promise<GraphReport
     await writePlanItems(session, planItems);
     await writeDecisions(session, decisions);
     await writeConstraints(session, constraints);
+    await gcOrphanFiles(session);
 
     const countsAfter = await collectCounts(session);
     const report: GraphReport = {

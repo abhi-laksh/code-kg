@@ -98,7 +98,7 @@ export function resolveImport(fromFile: string, specifier: string): { target: st
     const idx = path.join(base, `index${ext}`);
     if (exists(idx)) return { target: normalizePath(idx), external: false };
   }
-  return { target: normalizePath(`${base}.ts`), external: false };
+  return { target: specifier, external: true };
 }
 
 // ── code parser ───────────────────────────────────────────────────────────────

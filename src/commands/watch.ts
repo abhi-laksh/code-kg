@@ -38,7 +38,7 @@ export async function runWatch(cfg: Config, fast = false): Promise<void> {
     const changed: string[] = [];
     const removed: string[] = [];
     for (const [p, info] of pending.entries()) {
-      if (isIgnored(p) || cfg.ignoreDirs.some((seg) => p.split("/").includes(seg))) continue;
+      if (isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg))) continue;
       (info.exists ? changed : removed).push(p);
     }
     pending.clear();
