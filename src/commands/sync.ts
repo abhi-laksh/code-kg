@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import { Config, FileInfo, GraphReport, SymbolInfo } from "../types.js";
 import { ROOT } from "../config.js";
 import { openSession } from "../graph/driver.js";
@@ -17,7 +18,32 @@ import {
 } from "../graph/writer.js";
 import { unwrapRecord } from "../graph/driver.js";
 
+function detectChangedPaths(): string[] {
+  try {
+    const modified = execSync("git diff --name-only HEAD", { cwd: ROOT, encoding: "utf8" })
+      .split("\n").map((s) => s.trim()).filter(Boolean);
+    const untracked = execSync("git ls-files --others --exclude-standard", { cwd: ROOT, encoding: "utf8" })
+      .split("\n").map((s) => s.trim()).filter(Boolean);
+    const deleted = execSync("git ls-files --deleted", { cwd: ROOT, encoding: "utf8" })
+      .split("\n").map((s) => s.trim()).filter(Boolean);
+    const all = [...new Set([...modified, ...untracked, ...deleted])];
+    if (all.length) console.log(`[sync] auto-detected ${all.length} changed file(s) from git`);
+    return all;
+  } catch {
+    return [];
+  }
+}
+
 export async function runSync(inputPaths: string[], cfg: Config, fast = false): Promise<GraphReport> {
+  if (!inputPaths.length) {
+    const detected = detectChangedPaths();
+    if (!detected.length) {
+      console.log("[sync] no changed files detected — nothing to sync");
+      process.exit(0);
+    }
+    inputPaths = detected;
+  }
+
   const norm = inputPaths
     .map((p) => path.isAbsolute(p) ? path.relative(ROOT, p) : p)
     .map(normalizePath)

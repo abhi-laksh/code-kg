@@ -2,45 +2,60 @@
 
 ## Purpose
 
-The bundled `brain-template` provides a markdown structure for documenting features, flows, tasks, edge cases, architecture, and implementation details in a graph-friendly way.
+The bundled `brain-template` provides a markdown structure for documenting apps, features, tasks, code entities, tests, tools, and architecture decisions in a graph-friendly way. Docs cross-link each other and codebase files using `[[wikilinks]]`.
 
 ## Core Model
 
-Each markdown file is treated as a node.
+Each markdown file is a graph node.
 
-- Frontmatter stores machine-friendly metadata
-- Body content stores human-readable detail
+- Frontmatter — machine-readable metadata (id, type, status, links)
+- Body sections — human-readable detail tailored to the doc type
 - `[[namespace:id]]` links become graph edges
 
-## Included Template Files
+## Template Files
 
-The template bundle lives in [`brain-template/`](../brain-template/README.md) and includes:
+| Template | Used for |
+|----------|----------|
+| `feature.md` | Features and subfeatures — problem, scope, plan, risks |
+| `task.md` | Tasks, subtasks, migrations, refactors — what, plan, files, checklist |
+| `code.md` | Functions, components, hooks, services, modules, APIs, schemas |
+| `test.md` | Unit, integration, e2e, and manual test cases |
+| `app.md` | Application or service overview — architecture, flows, integrations |
+| `architecture.md` | Architecture decisions — context, decision, rationale, tradeoffs |
+| `tool.md` | Libraries, SDKs, CLIs, platforms — setup, usage, alternatives |
 
-- feature index templates
-- subfeature index templates
-- task templates
-- flow, error, and edge-case templates
-- frontend and backend templates
-- architecture and ADR templates
+## Interlinking
+
+Docs link to each other and to codebase files using Obsidian-style wikilinks:
+
+```
+[[feature:auth-login]]
+[[task:auth-t-001]]
+[[code:src/auth/login.ts]]
+[[architecture:session-tokens]]
+[[app:api-server]]
+[[tool:drizzle-orm]]
+[[test:login-integration]]
+```
+
+These become edges in the graph — queryable via Neo4j.
 
 ## Recommended Workflow
 
-1. Run `code-kg init` in the target project.
-2. Start with feature and subfeature index files.
-3. Add task docs before implementation work begins.
-4. Link related docs with `[[...]]` references.
-5. Run `code-kg sync` or `code-kg rebuild` to push docs into Neo4j.
+1. Run `code-kg init-templates` to scaffold the structure into your project.
+2. Create a feature doc first — establishes scope and links.
+3. Break into task docs — one per implementation unit.
+4. Add code docs for key functions/components as you build.
+5. Add architecture docs for non-obvious decisions.
+6. Run `code-kg sync <path>` after each new or edited doc, or use `code-kg watch`.
 
 ## Writing Guidance
 
-- Keep frontmatter summaries short and specific
-- Prefer explicit links over implied relationships
-- Split large topics into separate docs instead of growing one file indefinitely
-- Keep naming stable so graph references remain predictable
+- Keep frontmatter `summary` short and specific — it surfaces in graph queries
+- Prefer explicit `[[links]]` over implied relationships
+- Split large topics into focused docs — one concern per file
+- Keep IDs and filenames stable so graph references don't break
 
 ## Additional Reference
 
-The deeper structure and naming conventions are documented in:
-
 - [`brain-template/README.md`](../brain-template/README.md)
-- [`brain-template/relationships.md`](../brain-template/relationships.md)

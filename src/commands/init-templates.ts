@@ -1,32 +1,93 @@
 import fs from "fs";
 import path from "path";
+import readline from "readline";
 import { ROOT } from "../config.js";
 
-const TEMPLATE_DIR = path.join(__dirname, "..", "..", "brain-template");
+const BRAIN_TEMPLATE_DIR = path.join(__dirname, "..", "..", "brain-template");
+const TEMPLATE_DIR = path.join(BRAIN_TEMPLATE_DIR, "templates");
 
-function copyDir(src: string, dest: string): void {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const item of fs.readdirSync(src)) {
-    const srcPath = path.join(src, item);
-    const destPath = path.join(dest, item);
-    if (fs.statSync(srcPath).isDirectory()) {
-      copyDir(srcPath, destPath);
-    } else if (!fs.existsSync(destPath)) {
-      fs.copyFileSync(srcPath, destPath);
-      console.log(`  created  ${path.relative(ROOT, destPath)}`);
-    } else {
-      console.log(`  skipped  ${path.relative(ROOT, destPath)} (already exists)`);
-    }
+const TEMPLATES: { file: string; label: string; desc: string }[] = [
+  { file: "feature.md",      label: "feature",      desc: "Feature hub or sub-feature — scope, plan, status, dependencies" },
+  { file: "task.md",         label: "task",          desc: "Task/subtask/migration — what to do, blockers, implementation steps" },
+  { file: "code.md",         label: "code",          desc: "Function/component/class — signature, behavior, dependencies" },
+  { file: "architecture.md", label: "architecture",  desc: "Architecture decision record (ADR) — context, decision, rationale" },
+  { file: "tool.md",         label: "tool",          desc: "Library/SDK/service — purpose, usage, tradeoffs" },
+  { file: "app.md",          label: "app",           desc: "Application — tech stack, flows, deployment" },
+  { file: "test.md",         label: "test",          desc: "Test case — preconditions, steps, expected result" },
+];
+
+function ask(rl: readline.Interface, question: string): Promise<string> {
+  return new Promise((resolve) => rl.question(question, resolve));
+}
+
+function copyFile(src: string, dest: string): void {
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  if (!fs.existsSync(dest)) {
+    fs.copyFileSync(src, dest);
+    console.log(`  created  ${path.relative(ROOT, dest)}`);
+  } else {
+    console.log(`  skipped  ${path.relative(ROOT, dest)} (already exists)`);
   }
 }
 
-export function runInitTemplates(): void {
-  if (!fs.existsSync(TEMPLATE_DIR)) {
-    console.warn(`[init-templates] brain-template not found at ${TEMPLATE_DIR}`);
+export async function runInitTemplates(): Promise<void> {
+  if (!fs.existsSync(BRAIN_TEMPLATE_DIR)) {
+    console.warn(`[init-templates] brain-template not found at ${BRAIN_TEMPLATE_DIR}`);
     return;
   }
 
-  console.log("[init-templates] scaffolding knowledge base structure…\n");
-  copyDir(TEMPLATE_DIR, ROOT);
-  console.log("\n[init-templates] done!");
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+  try {
+    console.log("\n[init-templates] Available template types:\n");
+    TEMPLATES.forEach((t, i) => {
+      console.log(`  ${i + 1}. ${t.label.padEnd(14)} ${t.desc}`);
+    });
+    console.log();
+
+    const selection = await ask(rl, 'Select types to scaffold (e.g. "1,3,5" or "all"): ');
+    const trimmed = selection.trim().toLowerCase();
+
+    let chosen: typeof TEMPLATES;
+    if (trimmed === "all" || trimmed === "") {
+      chosen = TEMPLATES;
+    } else {
+      const indices = trimmed.split(/[,\s]+/).map((s) => parseInt(s, 10) - 1);
+      chosen = indices
+        .filter((i) => i >= 0 && i < TEMPLATES.length)
+        .map((i) => TEMPLATES[i]);
+      if (!chosen.length) {
+        console.error("[init-templates] no valid selection. Aborting.");
+        return;
+      }
+    }
+
+    console.log();
+    const destinations: { template: typeof TEMPLATES[0]; destDir: string }[] = [];
+    for (const t of chosen) {
+      const defaultDir = `docs/${t.label}s`;
+      const answer = await ask(rl, `  Destination dir for ${t.label} docs? (default: ${defaultDir}): `);
+      destinations.push({ template: t, destDir: answer.trim() || defaultDir });
+    }
+
+    console.log("\n[init-templates] scaffolding…\n");
+
+    // always copy shared docs to project root
+    for (const name of ["relationships.md", "README.md"]) {
+      const src = path.join(BRAIN_TEMPLATE_DIR, name);
+      if (fs.existsSync(src)) copyFile(src, path.join(ROOT, name));
+    }
+
+    for (const { template, destDir } of destinations) {
+      const src = path.join(TEMPLATE_DIR, template.file);
+      const absDir = path.isAbsolute(destDir) ? destDir : path.join(ROOT, destDir);
+      const dest = path.join(absDir, template.file);
+      copyFile(src, dest);
+    }
+
+    console.log("\n[init-templates] done!");
+    console.log('  Run "code-kg sync <path>" on any file after filling in its frontmatter.');
+  } finally {
+    rl.close();
+  }
 }

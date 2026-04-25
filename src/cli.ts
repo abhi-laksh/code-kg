@@ -9,6 +9,7 @@ import { runSync } from "./commands/sync.js";
 import { runWatch } from "./commands/watch.js";
 import { runPing } from "./commands/ping.js";
 import { runNew } from "./commands/new.js";
+import { runReview } from "./commands/review.js";
 
 const program = new Command();
 
@@ -29,8 +30,8 @@ program
 program
   .command("init-templates")
   .description("scaffold brain-template knowledge base docs structure in the current project")
-  .action(() => {
-    runInitTemplates();
+  .action(async () => {
+    await runInitTemplates();
   });
 
 // ── ping ──────────────────────────────────────────────────────────────────────
@@ -58,13 +59,13 @@ program
 
 // ── sync ──────────────────────────────────────────────────────────────────────
 program
-  .command("sync <paths...>")
-  .description("incrementally update the graph for the given file paths")
+  .command("sync [paths...]")
+  .description("incrementally update the graph for the given file paths (omit to auto-detect via git)")
   .option("--fast", "use fast name-based call resolution")
   .action(async (paths: string[], opts: { fast?: boolean }) => {
     const cfg = loadConfig();
     try {
-      await runSync(paths, cfg, !!opts.fast);
+      await runSync(paths ?? [], cfg, !!opts.fast);
     } finally {
       await closeDriver();
     }
@@ -86,11 +87,27 @@ program
   .command("new <type> <path>")
   .description(
     "create a new knowledge-base doc from a template\n" +
-    "  types: feature, subfeature, task, flow, error, edge-case, test-case,\n" +
-    "         page, component, state, function, architecture, adr"
+    "  types: feature, subfeature\n" +
+    "         task, subtask, migration, refactor\n" +
+    "         code, function, component, hook, service, module, api, schema\n" +
+    "         test, app, architecture, tool"
   )
   .action((type: string, destPath: string) => {
     runNew(type, destPath);
+  });
+
+// ── review ────────────────────────────────────────────────────────────────────
+program
+  .command("review")
+  .description("analyse coverage gaps: unindexed files, code with no docs, isolated docs, untested features")
+  .option("--json", "output machine-readable JSON")
+  .action(async (opts: { json?: boolean }) => {
+    const cfg = loadConfig();
+    try {
+      await runReview(cfg, !!opts.json);
+    } finally {
+      await closeDriver();
+    }
   });
 
 program.parseAsync(process.argv).catch((e: Error) => {

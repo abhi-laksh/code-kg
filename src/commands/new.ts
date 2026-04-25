@@ -5,32 +5,42 @@ import { ROOT } from "../config.js";
 const TEMPLATE_DIR = path.join(__dirname, "..", "..", "brain-template", "templates");
 
 const TYPE_TO_TEMPLATE: Record<string, string> = {
-  feature:      "feature-index.md",
-  subfeature:   "subfeature-index.md",
+  // feature
+  feature:      "feature.md",
+  subfeature:   "feature.md",
+  // task
   task:         "task.md",
-  flow:         "flow.md",
-  error:        "error.md",
-  "edge-case":  "edge-case.md",
-  "test-case":  "test-case.md",
-  page:         "fe-page.md",
-  component:    "fe-component.md",
-  state:        "fe-state.md",
-  function:     "be-function.md",
+  subtask:      "task.md",
+  migration:    "task.md",
+  refactor:     "task.md",
+  // code entities
+  code:         "code.md",
+  function:     "code.md",
+  component:    "code.md",
+  hook:         "code.md",
+  service:      "code.md",
+  module:       "code.md",
+  api:          "code.md",
+  schema:       "code.md",
+  // other
+  test:         "test.md",
+  app:          "app.md",
   architecture: "architecture.md",
-  adr:          "adr.md",
+  tool:         "tool.md",
 };
 
 export function runNew(type: string, destPath: string): void {
   const templateName = TYPE_TO_TEMPLATE[type.toLowerCase()];
   if (!templateName) {
-    console.error(`[new] unknown type "${type}". Available types:\n  ${Object.keys(TYPE_TO_TEMPLATE).join(", ")}`);
+    const types = [...new Set(Object.keys(TYPE_TO_TEMPLATE))].join(", ");
+    console.error(`[new] unknown type "${type}". Available types:\n  ${types}`);
     process.exit(1);
   }
 
   const templatePath = path.join(TEMPLATE_DIR, templateName);
   if (!fs.existsSync(templatePath)) {
     console.error(`[new] template not found: ${templatePath}`);
-    console.error(`      Run "code-kg init" first to scaffold the brain-template structure.`);
+    console.error(`      Run "code-kg init-templates" first to scaffold the brain-template structure.`);
     process.exit(1);
   }
 

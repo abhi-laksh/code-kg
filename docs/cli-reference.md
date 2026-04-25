@@ -66,29 +66,30 @@ Options:
 
 ## `code-kg new <type> <path>`
 
-Creates a markdown doc from one of the bundled templates.
+Creates a markdown doc from one of the bundled templates. After creation, fill in frontmatter fields and run `code-kg sync <path>` to index the doc.
 
-Supported types:
+Supported types and the template each uses:
 
-- `feature`
-- `subfeature`
-- `task`
-- `flow`
-- `error`
-- `edge-case`
-- `test-case`
-- `page`
-- `component`
-- `state`
-- `function`
-- `architecture`
-- `adr`
+| Type | Template |
+|------|----------|
+| `feature`, `subfeature` | `feature.md` |
+| `task`, `subtask`, `migration`, `refactor` | `task.md` |
+| `code`, `function`, `component`, `hook`, `service`, `module`, `api`, `schema` | `code.md` |
+| `test` | `test.md` |
+| `app` | `app.md` |
+| `architecture` | `architecture.md` |
+| `tool` | `tool.md` |
 
-Example:
+Examples:
 
 ```bash
-code-kg new task features/auth/tasks/auth-t-001.md
+code-kg new task docs/features/auth/tasks/auth-t-001.md
+code-kg new feature docs/features/auth/index.md
+code-kg new architecture docs/architecture/auth-flow.md
+code-kg new component docs/code/LoginButton.md
 ```
+
+> Run `code-kg init-templates` first if templates are not yet scaffolded into the project.
 
 ## Notes
 

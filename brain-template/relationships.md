@@ -1,24 +1,22 @@
 # Relationships
 
 Defines all relationship (edge) types used in this knowledge graph.
-Every `[[ns:id]]` link in any doc becomes one of these edges in Neo4j.
+Every `[[link]]` in any doc body or frontmatter value becomes one of these edges in Neo4j.
 
 ---
 
-## Link Namespaces
+## How Links Resolve
 
-| Syntax | Resolves To | Example |
+The ingestion parser scans for `[[target]]` patterns. Each target is resolved in order:
+
+| Target format | Resolves to | Example |
 |---|---|---|
-| `[[feature:x]]` | Feature hub or path within a feature | `[[feature:auth]]`, `[[feature:auth/be/auth-service]]` |
-| `[[code:x]]` | Source file, function, or class in codebase | `[[code:auth.service.ts]]`, `[[code:generateToken()]]`, `[[code:UserSchema]]` |
-| `[[task:id]]` | Task doc by ID | `[[task:auth-t-012]]` |
-| `[[flow:x]]` | Flow doc | `[[flow:auth.login]]` |
-| `[[arch:x]]` | Architecture doc or ADR | `[[arch:overview]]`, `[[arch:decisions/adr-003]]` |
-| `[[error:x]]` | Error doc | `[[error:auth.invalid-token]]` |
-| `[[test:x]]` | Test case doc | `[[test:auth.login-success]]` |
-| `[[edge:x]]` | Edge case doc | `[[edge:auth.token-race]]` |
+| Repo-relative file path | Code/file node | `[[src/auth/auth.service.ts]]` |
+| Doc `id` field value | Doc node | `[[auth-feature]]` (doc with `id: auth-feature`) |
 
-> **Code conventions:** `file.ts` for files · `fnName()` for functions (parens required) · `ClassName` for classes/schemas (PascalCase, no parens)
+If neither lookup matches, the link is silently ignored — no edge is created.
+
+> **Code conventions:** use the exact repo-relative path for files · use the exact `id` value from the target doc's frontmatter for doc links
 
 ---
 
@@ -46,6 +44,9 @@ Every `[[ns:id]]` link in any doc becomes one of these edges in Neo4j.
 
 ## How Edges Are Created
 
-The ingestion script scans every doc's body for `[[ns:id]]` patterns and creates edges automatically. Frontmatter fields like `depends_on`, `blocked_by`, `implements` etc. are also resolved into typed edges.
+The ingestion script processes each doc in two passes:
 
-Ownership (e.g. `HAS_TASK` vs `REFERENCES_DOC`) is determined by whether the linked node's `parent` or `belongs_to` points back to the same feature as the source doc.
+1. **Frontmatter fields** — fields like `depends_on`, `blocked_by`, `implements`, `related_test` etc. are scanned for `[[target]]` patterns and resolved into typed edges.
+2. **Body text** — all `[[target]]` occurrences in the markdown body are resolved and create `REFERENCES_CODE` or `REFERENCES_DOC` edges depending on whether the target is a file or a doc.
+
+Ownership edges (e.g. `HAS_TASK`, `BELONGS_TO`) are derived from the doc's `parent` or `belongs_to` frontmatter fields, not from body links.
