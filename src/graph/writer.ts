@@ -122,6 +122,7 @@ export async function writeSymbols(session: Session, symbols: SymbolInfo[]): Pro
          sym.visibility     = s.visibility,
          sym.returnType     = s.returnType,
          sym.parameters     = s.parameters,
+         sym.parameterTypes = s.parameterTypes,
          sym.genericParams  = s.genericParams,
          sym.decoratorNames = s.decoratorNames
      MERGE (f:File {path: s.file})
@@ -139,6 +140,7 @@ export async function writeSymbols(session: Session, symbols: SymbolInfo[]): Pro
         visibility: s.visibility ?? null,
         returnType: s.returnType ?? null,
         parameters: s.parameters ?? null,
+        parameterTypes: s.parameterTypes ?? null,
         genericParams: s.genericParams ?? null,
         decoratorNames: s.decoratorNames ?? null,
       })),

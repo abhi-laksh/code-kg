@@ -27,6 +27,8 @@ const TYPE_TO_TEMPLATE: Record<string, string> = {
   app:          "app.md",
   architecture: "architecture.md",
   tool:         "tool.md",
+  "edge-case":  "edge-case.md",
+  edge:         "edge-case.md",
 };
 
 export function runNew(type: string, destPath: string): void {

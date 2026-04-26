@@ -7,13 +7,14 @@ const BRAIN_TEMPLATE_DIR = path.join(__dirname, "..", "..", "brain-template");
 const TEMPLATE_DIR = path.join(BRAIN_TEMPLATE_DIR, "templates");
 
 const TEMPLATES: { file: string; label: string; desc: string }[] = [
-  { file: "feature.md",      label: "feature",      desc: "Feature hub or sub-feature — scope, plan, status, dependencies" },
-  { file: "task.md",         label: "task",          desc: "Task/subtask/migration — what to do, blockers, implementation steps" },
-  { file: "code.md",         label: "code",          desc: "Function/component/class — signature, behavior, dependencies" },
-  { file: "architecture.md", label: "architecture",  desc: "Architecture decision record (ADR) — context, decision, rationale" },
-  { file: "tool.md",         label: "tool",          desc: "Library/SDK/service — purpose, usage, tradeoffs" },
-  { file: "app.md",          label: "app",           desc: "Application — tech stack, flows, deployment" },
-  { file: "test.md",         label: "test",          desc: "Test case — preconditions, steps, expected result" },
+  { file: "architecture.md", label: "architecture",  desc: "Full system architecture — stack, infra, cloud, APIs, decisions" },
+  { file: "app.md",          label: "app",           desc: "Application — purpose, stack, tools, features, env, deploy" },
+  { file: "feature.md",      label: "feature",       desc: "Feature — problem, goal, scope, tasks, code references" },
+  { file: "task.md",         label: "task",          desc: "Task/subtask/migration — why, plan, files, done criteria" },
+  { file: "code.md",         label: "code",          desc: "Function/component/service — signature, behavior, gotchas" },
+  { file: "test.md",         label: "test",          desc: "Test suite — scenarios, pass/fail criteria, how to run" },
+  { file: "edge-case.md",    label: "edge-case",     desc: "Edge case — scenario, root cause, expected vs failure behavior" },
+  { file: "tool.md",         label: "tool",          desc: "Library/SDK/service — purpose, usage, config, limitations" },
 ];
 
 function ask(rl: readline.Interface, question: string): Promise<string> {

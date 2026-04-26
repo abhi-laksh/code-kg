@@ -5,11 +5,7 @@ name: ""
 status: ""          # planned | active | deprecated
 summary: ""
 kind: ""            # web | api | worker | mobile | cli | desktop
-repo: ""            # URL or monorepo path
-tech_stack: []      # e.g. [Next.js, PostgreSQL, Redis]
-depends_on: []      # [[app:x]], [[tool:x]]
-exposes: []         # endpoints, events, queues this app owns
-deployed_at: ""     # prod URL or environment name
+repo: ""
 owner: ""
 keywords: []
 updated: ""
@@ -18,69 +14,64 @@ tags: []
 
 ## Overview
 
-> What this app does and who uses it.
+> One paragraph — what this app is and who uses it.
 
 ---
 
-## Architecture
+## Purpose
 
-> High-level structure — layers, key modules, data flow.
-
-Architecture decisions: [[architecture:]]
+> Why this app exists. What problem it solves in the system.
 
 ---
 
-## Key Flows
+## Stack
 
-> 2–5 critical user or system flows through this app.
-
-1. **[Flow name]** — [[feature:]] → [[code:]]
-2. 
+> Runtime, framework, DB, cache, queue. Link architecture with [[arch-id]].
 
 ---
 
-## Integrations
+## Tools
 
-| System | Direction | What |
-|--------|-----------|------|
-| [[app:]] | in/out | |
-| [[tool:]] | | |
+> Libraries, SDKs, CLIs used in this app. Link each with [[tool-id]].
 
 ---
 
-## API / Interface
+## External Services
 
-> Endpoints, events, or queues this app exposes. Link contracts.
-
-- `POST /` → [[code:]]
+> Third-party APIs, managed cloud services, webhooks. Link architecture with [[arch-id]].
 
 ---
 
-## Configuration
+## Features
 
-> Key env vars, feature flags, config files.
-
-| Key | Purpose |
-|-----|---------|
-| | |
+> Features this app owns. Link each with [[feature-id]].
 
 ---
 
-## Deployment
+## Sub-Features
 
-> How it runs in prod. Infra, scaling, CI/CD notes.
-
-Architecture: [[architecture:]]
+> Lower-level feature breakdowns if needed. Link each with [[feature-id]].
 
 ---
 
-## Known Issues / Gotchas
+## Key Files
 
-- 
+> Entry points, root configs, critical modules. Link with [[src/path/to/file.ts]].
 
 ---
 
-## References
+## Config / Env
 
-- [[architecture:]]
-- [[tool:]]
+> Non-obvious env vars and what they control.
+
+---
+
+## Run / Deploy Notes
+
+> How to run locally, how it deploys to prod, CI/CD pipeline notes.
+
+---
+
+## Gotchas
+
+> Deployment quirks, known incidents, things that have broken before.

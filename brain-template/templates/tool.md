@@ -6,69 +6,60 @@ status: ""          # evaluating | adopted | deprecated
 summary: ""
 category: ""        # library | sdk | cli | service | platform
 version: ""
-used_by: []         # [[app:x]], [[feature:x]]
-replaces: ""        # [[tool:x]] — if this supersedes another tool
-docs: ""            # URL or [[code:path/to/local-docs]]
+docs: ""
 keywords: []
 updated: ""
 tags: []
 ---
 
+## Overview
+
+> One paragraph — what this tool is.
+
+---
+
 ## Purpose
 
-> What problem this tool solves. Why it was adopted over alternatives.
-
-Adoption decision: [[architecture:]]
+> Why it's in the codebase. What problem it solves.
 
 ---
 
-## Installation / Setup
+## Where Used
 
-```sh
-# install command
-```
-
-Config: [[code:]]
+> Apps and features that use this. Link with [[app-id]] or [[feature-id]].
 
 ---
 
-## Key APIs / Usage
+## Setup
 
-> Most-used patterns in this codebase.
-
-```ts
-// primary usage pattern
-```
-
-Used in: [[code:]] | [[app:]]
+> Install commands, init steps. Link config file with [[src/path/to/config.ts]].
 
 ---
 
-## Configuration
+## Common Usage
 
-| Option | Value | Purpose |
-|--------|-------|---------|
-| | | |
-
-Config file: [[code:]]
+> Patterns actually used in this project — not the full docs.
 
 ---
 
-## Known Limitations
+## Config
 
-- 
-
----
-
-## Alternatives Considered
-
-| Tool | Why Not Chosen |
-|------|---------------|
-| [[tool:]] | |
+> Key options, env vars, config file location. Link with [[src/path/to/config.ts]].
 
 ---
 
-## References
+## Limitations
 
-- Docs: 
-- [[architecture:]]
+> Rate limits, known bugs, things it can't do, version-specific issues.
+
+---
+
+## Alternatives
+
+> What we considered and why we didn't pick it.
+
+---
+
+## Notes
+
+> Upgrade notes, breaking changes to watch, version history.

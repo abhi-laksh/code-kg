@@ -5,65 +5,75 @@ name: ""
 status: ""          # planned | in-progress | done | blocked | cancelled
 priority: ""        # p0 | p1 | p2 | p3
 summary: ""
-parent: ""          # [[feature:x]] or [[task:id]]
-subtask_of: ""      # [[task:id]] — fill if this is a child task
-sub_tasks: []       # [[task:id]]
 assigned_to: ""
-implements: []      # [[code:file.ts]], [[code:fn()]]
-blocked_by: []      # [[task:id]]
-related_test: []    # [[test:id]]
+est: ""             # rough effort — e.g. 2h | 1d | 3d
+breaking_change: false
+decision: ""        # key design call made in this task
 keywords: []
 updated: ""
 tags: []
 ---
 
-## What
+## Overview
 
-> Precise description of what needs to be done and why it belongs here.
+> One paragraph — what this task is and what it changes.
 
-Parent: [[feature:]] | [[task:]]
+---
+
+## Why
+
+> Why this task exists. What breaks or can't proceed without it?
+
+---
+
+## Parent Feature
+
+> Feature this task belongs to. Link with [[feature-id]].
 
 ---
 
 ## Implementation Plan
 
-> Step-by-step approach. Reference exact functions/files to touch.
+> Step-by-step. Name specific functions, files, or queries. Be concrete.
 
-1. 
-2. 
+---
+
+## Subtasks
+
+> Smaller work items if needed. Link each with [[task-id]].
 
 ---
 
 ## Files to Change
 
-| Action | File | What changes |
-|--------|------|--------------|
-| modify | `[[code:]]` | |
-| add | `[[code:]]` | |
+> Files to add, modify, or delete. Link with [[src/path/to/file.ts]].
 
 ---
 
-## Implementation Order
+## Code References
 
-1. 
-2. 
+> Specific functions, classes, or modules to touch. Link with [[src/path/to/file.ts]].
 
 ---
 
-## Verification Checklist
+## Related Tests
 
-- [ ] 
-- [ ] Tests: [[test:]]
-- [ ] No regressions in [[feature:]]
+> Tests to update or write. Link with [[test-id]].
 
 ---
 
 ## Blockers
 
-- [[task:]] — waiting on
+> What is blocking this task. Link with [[task-id]].
+
+---
+
+## Done Criteria
+
+> Concrete, checkable conditions for this task to be considered complete.
 
 ---
 
 ## Notes
 
-> Edge cases, constraints, gotchas discovered during implementation.
+> Surprises, edge cases, constraints discovered during work.

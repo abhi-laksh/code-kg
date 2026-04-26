@@ -1,71 +1,70 @@
 ---
 id: ""
-type: ""            # function | component | hook | service | module | api | schema | file
+type: ""            # function | component | hook | service | module | api | schema
 name: ""
 status: ""          # planned | stable | deprecated
 summary: ""
-file: ""            # [[code:path/to/file.ts]]
-signature: ""       # fnName(param: Type): ReturnType — mainly for functions/APIs
-depends_on: []      # [[code:x]], [[app:x]]
-used_by: []         # [[code:x]], [[feature:x]]
-related_test: ""    # [[test:id]]
-related_task: ""    # [[task:id]]
 keywords: []
 updated: ""
 tags: []
 ---
 
+## Overview
+
+> One paragraph — what this code unit is and why it exists.
+
+---
+
 ## Purpose
 
-> Why this exists. What problem it solves in the system.
+> What problem it solves in the system. Feature context: [[feature-id]].
 
-Feature context: [[feature:]] | Task: [[task:]]
+---
+
+## File
+
+> Repo-relative path. Link with [[src/path/to/file.ts]].
 
 ---
 
 ## Signature / Interface
 
-```
-// paste signature, props type, or schema here
-```
+```ts
 
-File: [[code:]]
+```
 
 ---
 
 ## Behavior
 
-> How it works. Key logic, state, side effects, mutations.
-
----
-
-## Edge Cases & Constraints
-
-| Case | Behavior |
-|------|----------|
-| | |
-
----
-
-## Usage
-
-```ts
-// minimal usage example
-```
-
-Called by: [[code:]] | [[feature:]]
+> Key logic, state, side effects. What it mutates, reads, emits.
 
 ---
 
 ## Dependencies
 
-| Dep | Why |
-|-----|-----|
-| [[code:]] | |
-| [[app:]] | |
+> Other modules, services, or tools this relies on. Link with [[src/path/to/file.ts]] or [[tool-id]].
 
 ---
 
-## Notes
+## Used By
 
-> Gotchas, non-obvious invariants, workarounds, known debt.
+> What calls or imports this. Link with [[src/path/to/file.ts]] or [[feature-id]].
+
+---
+
+## Related Task
+
+> Task that created or significantly changed this. Link with [[task-id]].
+
+---
+
+## Related Tests
+
+> Tests covering this code. Link with [[test-id]].
+
+---
+
+## Gotchas
+
+> Non-obvious invariants, known bugs, performance traps, things that will bite you.

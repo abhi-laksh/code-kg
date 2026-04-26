@@ -87,10 +87,14 @@ program
   .command("new <type> <path>")
   .description(
     "create a new knowledge-base doc from a template\n" +
-    "  types: feature, subfeature\n" +
+    "  types: architecture\n" +
+    "         app\n" +
+    "         feature, subfeature\n" +
     "         task, subtask, migration, refactor\n" +
     "         code, function, component, hook, service, module, api, schema\n" +
-    "         test, app, architecture, tool"
+    "         test\n" +
+    "         edge-case, edge\n" +
+    "         tool"
   )
   .action((type: string, destPath: string) => {
     runNew(type, destPath);

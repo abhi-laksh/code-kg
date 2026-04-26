@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { Project, SyntaxKind, ts, Node, Scope } from "ts-morph";
+import { Project, SyntaxKind, ts, Node, Scope, ClassDeclaration } from "ts-morph";
 import {
   Config, FileInfo, SymbolInfo, ImportEdge, CallEdge, SymbolKey,
   SymbolEdge, ReExportsEdge, ImportTypeEdge,
@@ -164,6 +164,51 @@ function extractTypeRefs(typeNode: Node | undefined): SymbolKey[] {
   return refs;
 }
 
+/** Build clean signature from AST — handles multi-line declarations correctly */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildSignature(name: string, node: any, modifiers: string[] = []): string {
+  try {
+    const tp = node.getTypeParameters?.()?.map((t: any) => t.getText()).join(", ") ?? "";
+    const ps = node.getParameters?.()?.map((p: any) => {
+      const n = p.getName?.() ?? "";
+      const t = p.getTypeNode?.()?.getText() ?? null;
+      const opt = p.isOptional?.() ? "?" : "";
+      return t ? `${n}${opt}: ${t}` : n;
+    }).join(", ") ?? "";
+    const rt = node.getReturnTypeNode?.()?.getText() ?? "";
+    const mod = modifiers.length ? modifiers.join(" ") + " " : "";
+    return `${mod}${name}${tp ? `<${tp}>` : ""}(${ps})${rt ? `: ${rt}` : ""}`;
+  } catch {
+    return name;
+  }
+}
+
+/** Collect parameter type strings for array-queryable storage */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function paramTypes(node: any): string[] | undefined {
+  try {
+    const types = node.getParameters?.()
+      ?.map((p: any) => p.getTypeNode?.()?.getText() ?? null)
+      .filter(Boolean) as string[];
+    return types?.length ? types : undefined;
+  } catch { return undefined; }
+}
+
+/** Walk base class chain for OVERRIDES — one level misses deep hierarchies */
+function findMethodInChain(cls: ClassDeclaration, name: string, max = 8) {
+  try {
+    let cur = cls.getBaseClass();
+    let depth = 0;
+    while (cur && depth < max) {
+      const m = cur.getMethod(name);
+      if (m) return m;
+      cur = cur.getBaseClass();
+      depth++;
+    }
+  } catch { /* skip */ }
+  return undefined;
+}
+
 // ── code parser ───────────────────────────────────────────────────────────────
 
 export interface ParseSourceFileResult {
@@ -234,15 +279,31 @@ export function parseSourceFile(
 
   for (const exp of sf.getExportDeclarations()) {
     if (!exp.hasModuleSpecifier()) continue;
-    for (const named of exp.getNamedExports()) {
+    const named = exp.getNamedExports();
+    if (named.length) {
+      // named re-exports: export { Foo, Bar } from './module'
+      for (const ne of named) {
+        try {
+          const sym = ne.getNameNode().getSymbol();
+          if (!sym) continue;
+          const aliasedSym = sym.getAliasedSymbol() ?? sym;
+          const decls = aliasedSym.getDeclarations?.() ?? [];
+          if (!decls.length) continue;
+          const key = declToKey(decls[0]);
+          if (key) reExportsEdges.push({ file: relPath, symbol: key });
+        } catch { /* skip */ }
+      }
+    } else {
+      // star re-exports: export * from './module' — get all symbols from target file
       try {
-        const sym = named.getNameNode().getSymbol();
-        if (!sym) continue;
-        const aliasedSym = sym.getAliasedSymbol() ?? sym;
-        const decls = aliasedSym.getDeclarations?.() ?? [];
-        if (!decls.length) continue;
-        const key = declToKey(decls[0]);
-        if (key) reExportsEdges.push({ file: relPath, symbol: key });
+        const targetSf = exp.getModuleSpecifierSourceFile();
+        if (!targetSf) continue;
+        for (const [, decls] of targetSf.getExportedDeclarations()) {
+          for (const decl of decls) {
+            const key = declToKey(decl);
+            if (key) reExportsEdges.push({ file: relPath, symbol: key });
+          }
+        }
       } catch { /* skip */ }
     }
   }
@@ -262,7 +323,8 @@ export function parseSourceFile(
       name, kind, file: relPath,
       startLine: node.getStartLineNumber(),
       endLine: node.getEndLineNumber(),
-      signature: oneLiner((node.getText() as string).split("\n")[0] ?? name),
+      // extras.signature overrides the default text-based extraction
+      signature: extras.signature ?? oneLiner((node.getText() as string).split("\n")[0] ?? name),
       isExported,
       ...extras,
     });
@@ -274,10 +336,18 @@ export function parseSourceFile(
     try {
       for (const stmt of bodyNode.getDescendantsOfKind(SyntaxKind.ThrowStatement)) {
         const expr = stmt.getExpression();
-        if (Node.isNewExpression(expr)) {
-          const key = resolveExprToKey(expr.getExpression());
-          if (key) throwsEdges.push({ from: fromKey, to: key });
-        }
+        let key: SymbolKey | null = null;
+        // Type resolution first — handles re-throws (throw err) and any typed expression
+        try {
+          const typeSym = expr.getType().getSymbol();
+          if (typeSym) {
+            const decls = typeSym.getDeclarations?.() ?? [];
+            if (decls.length) key = declToKey(decls[0]);
+          }
+        } catch { /* skip */ }
+        // Fallback: explicit new expression constructor
+        if (!key && Node.isNewExpression(expr)) key = resolveExprToKey(expr.getExpression());
+        if (key) throwsEdges.push({ from: fromKey, to: key });
       }
     } catch { /* skip */ }
   };
@@ -292,9 +362,9 @@ export function parseSourceFile(
     } catch { /* skip */ }
   };
 
-  // ── functions ─────────────────────────────────────────────────────────────
+  // ── functions (all levels — top-level + nested declarations) ─────────────
 
-  for (const fn of sf.getFunctions()) {
+  for (const fn of sf.getDescendantsOfKind(SyntaxKind.FunctionDeclaration)) {
     const name = fn.getName();
     if (!name) continue;
     const params = fn.getParameters().map((p) => ({
@@ -303,12 +373,15 @@ export function parseSourceFile(
       optional: p.isOptional(),
       default: p.getInitializer()?.getText() ?? null,
     }));
+    const mods = fn.isAsync() ? ["async"] : [];
     mkSym(name, "function", fn, fn.isExported(), {
       jsdoc: fn.getJsDocs()[0]?.getDescription()?.trim() || undefined,
       async: fn.isAsync() || undefined,
       returnType: fn.getReturnTypeNode()?.getText(),
       parameters: params.length ? JSON.stringify(params) : undefined,
+      parameterTypes: paramTypes(fn),
       genericParams: fn.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
+      signature: buildSignature(name, fn, mods),
     });
     const fromKey: SymbolKey = { file: relPath, name, startLine: fn.getStartLineNumber() };
     for (const ref of extractTypeRefs(fn.getReturnTypeNode())) referencesTypeEdges.push({ from: fromKey, to: ref });
@@ -371,6 +444,12 @@ export function parseSourceFile(
         default: p.getInitializer()?.getText() ?? null,
       }));
 
+      const mMods = [
+        ...(m.isAsync() ? ["async"] : []),
+        ...(m.isStatic() ? ["static"] : []),
+        ...(m.isAbstract() ? ["abstract"] : []),
+        ...(vis ? [vis] : []),
+      ];
       mkSym(mName, "method", m, false, {
         parentName: className,
         jsdoc: m.getJsDocs()[0]?.getDescription()?.trim() || undefined,
@@ -380,19 +459,18 @@ export function parseSourceFile(
         visibility: vis,
         returnType: m.getReturnTypeNode()?.getText(),
         parameters: mParams.length ? JSON.stringify(mParams) : undefined,
+        parameterTypes: paramTypes(m),
         genericParams: m.getTypeParameters().map((tp) => tp.getText()).join(", ") || undefined,
         decoratorNames: mDecNames.length ? mDecNames : undefined,
+        signature: buildSignature(mName, m, mMods),
       });
 
-      // OVERRIDES
+      // OVERRIDES — walk full chain, not just one level
       try {
-        const baseClass = cls.getBaseClass();
-        if (baseClass) {
-          const baseMethod = baseClass.getMethod(mName);
-          if (baseMethod) {
-            const toKey = declToKey(baseMethod);
-            if (toKey) overridesEdges.push({ from: methodKey, to: toKey });
-          }
+        const baseMethod = findMethodInChain(cls, mName);
+        if (baseMethod) {
+          const toKey = declToKey(baseMethod);
+          if (toKey) overridesEdges.push({ from: methodKey, to: toKey });
         }
       } catch { /* skip */ }
 
@@ -524,6 +602,8 @@ export function parseSourceFile(
           async: fn.isAsync?.() || undefined,
           returnType: fn.getReturnTypeNode?.()?.getText(),
           parameters: params.length ? JSON.stringify(params) : undefined,
+          parameterTypes: paramTypes(fn),
+          signature: buildSignature(name, fn, fn.isAsync?.() ? ["async"] : []),
         });
         const fromKey: SymbolKey = { file: relPath, name, startLine: d.getStartLineNumber() };
         for (const ref of extractTypeRefs(fn.getReturnTypeNode?.())) referencesTypeEdges.push({ from: fromKey, to: ref });

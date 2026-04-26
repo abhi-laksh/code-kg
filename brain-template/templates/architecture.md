@@ -4,78 +4,71 @@ type: "architecture"
 name: ""
 status: ""          # draft | stable | deprecated
 summary: ""
-layer: ""           # frontend | backend | infra | db | cross-cutting
-decision: ""        # one-line — what was decided or how it works
-reason: ""          # one-line — why this approach
-related: []         # [[architecture:x]], [[app:x]]
-affects: []         # [[feature:x]], [[code:x]]
-constraints: []     # key constraints this design enforces
-supersedes: ""      # [[architecture:x]]
 keywords: []
 updated: ""
 tags: []
 ---
 
-## Context & Problem
+## Overview
 
-> What situation or pressure prompted this decision? What question needed answering?
-
----
-
-## Decision
-
-> What was decided — the specific pattern, structure, or rule.
+> One paragraph — what this document covers architecturally.
 
 ---
 
-## Rationale
+## Tech Stack
 
-> Why this over alternatives? What constraints or tradeoffs drove it?
-
----
-
-## Consequences
-
-**Positive:**
-- 
-
-**Negative / Tradeoffs:**
-- 
+> Languages, runtimes, frameworks, and major libraries powering the system.
 
 ---
 
-## Alternatives Considered
+## Tools
 
-| Option | Rejected Because |
-|--------|-----------------|
-| | |
+> Developer tooling, build tools, monitoring, observability. Link each with [[tool-id]].
 
 ---
 
-## How It Works
+## External APIs
 
-> Structural or flow description. Diagrams or pseudocode if useful.
-
-Affected code: [[code:]] | [[app:]]
+> Third-party APIs consumed — auth providers, payment gateways, messaging, etc.
 
 ---
 
-## Constraints This Enforces
+## Frontend
 
-> Rules that downstream code must follow because of this decision.
-
-- 
+> Frontend framework, rendering strategy, state management, hosting. Link app with [[app-id]].
 
 ---
 
-## Related Decisions
+## Backend
 
-- Supersedes: [[architecture:]]
-- Related: [[architecture:]]
+> API style (REST/GraphQL/gRPC), service structure, background jobs. Link app with [[app-id]].
 
 ---
 
-## References
+## Cloud / Infra
 
-- [[app:]]
-- [[feature:]]
+> Cloud provider, hosting model, CI/CD, environments (staging/prod), IaC tools.
+
+---
+
+## Apps
+
+> Services and apps that make up this system. Link each with [[app-id]].
+
+---
+
+## Core Features
+
+> High-level feature areas. Link each with [[feature-id]].
+
+---
+
+## Constraints / Decisions
+
+> Key architectural decisions, rules downstream code must follow, non-negotiables.
+
+---
+
+## Risks / Gotchas
+
+> Known pain points, scaling limits, tech debt, things that have broken before.

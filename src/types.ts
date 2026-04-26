@@ -45,6 +45,7 @@ export interface SymbolInfo {
   visibility?: "public" | "private" | "protected";
   returnType?: string;
   parameters?: string;        // JSON: [{name,type,optional,default}]
+  parameterTypes?: string[];  // type strings only — queryable as array
   genericParams?: string;     // "T extends Entity, K"
   decoratorNames?: string[];
 }

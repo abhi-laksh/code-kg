@@ -3,82 +3,78 @@ id: ""
 type: ""            # feature | subfeature
 name: ""
 status: ""          # planned | in-progress | done | deprecated
-priority: ""        # p0 | p1 | p2 | p3 — skip for subfeature
+priority: ""        # p0 | p1 | p2 | p3
 summary: ""
-domain: ""          # e.g. auth | payments | onboarding
+domain: ""          # e.g. auth | payments | notifications
 owner: ""
-parent: ""          # [[feature:x]] — fill for subfeature
-depends_on: []      # [[feature:x]], [[app:x]]
-children: []        # [[feature:x/sub/y]] or [[task:id]]
-progress: ""        # e.g. 3/8 tasks done
+parent: ""          # [[parent-feature-id]] — for subfeature only
+impact: ""          # who/what is affected
+decision: ""        # key design call for this feature
 keywords: []
 updated: ""
 tags: []
 ---
 
-## Problem Statement
+## Overview
 
-> What user/system pain does this solve? Why does it matter?
+> One paragraph — what this feature is and what it does for the user or system.
 
 ---
 
-## Current State
+## Problem
 
-> How does this work today (or what is absent)? Link relevant code or architecture.
+> What breaks, hurts, or is missing without this feature?
 
-- [[code:]]
-- [[architecture:]]
+---
+
+## Goal
+
+> What does success look like? What is the intended outcome?
 
 ---
 
 ## Scope
 
-**In:** 
-**Out:** 
+> What is in and out of scope. Keep it tight.
 
 ---
 
-## Implementation Plan
+## Parent App
 
-> High-level approach. Link sub-features and tasks.
-
-- [[feature:]]
-- [[task:]]
+> Which app owns this feature. Link with [[app-id]].
 
 ---
 
-## Files Summary
+## Sub-Features
 
-| Action | File | Change |
-|--------|------|--------|
-| add | `[[code:]]` | |
-| modify | `[[code:]]` | |
+> Smaller feature slices if this is large. Link each with [[feature-id]].
 
 ---
 
-## Implementation Order
+## Tasks
 
-1. 
-2. 
-
----
-
-## Verification Checklist
-
-- [ ] 
-- [ ] Related tests pass — [[test:]]
+> Work items for this feature. Link each with [[task-id]].
 
 ---
 
-## Risks & Mitigations
+## Code / File References
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| | | |
+> Files being created or modified. Link with [[src/path/to/file.ts]].
 
 ---
 
-## References
+## Dependencies
 
-- [[architecture:]]
-- [[app:]]
+> Other features, services, or tools this depends on. Link with [[feature-id]] or [[tool-id]].
+
+---
+
+## Done Criteria
+
+> Concrete, checkable conditions for this feature to be considered complete.
+
+---
+
+## Notes
+
+> Gotchas, open questions, constraints, decisions discovered along the way.

@@ -5,63 +5,65 @@ name: ""
 status: ""          # draft | ready | passing | failing | skipped
 test_type: ""       # unit | integration | e2e | manual
 summary: ""
-tests: ""           # [[code:x]] or [[task:id]] — what this verifies
-code_path: ""       # path to test file in codebase
-preconditions: []
-expected_result: ""
-related_task: ""    # [[task:id]]
 keywords: []
 updated: ""
 tags: []
 ---
 
-## Purpose
+## Overview
 
-> What behavior or contract this test guards. Why it matters.
-
-Verifies: [[code:]] | [[feature:]] | [[task:]]
+> One paragraph — what behavior or contract this test suite guards.
 
 ---
 
-## Preconditions
+## What Is Being Tested
 
-> State, fixtures, mocks, or env required before test runs.
-
-- 
+> The specific behavior, function, or flow under test. Link with [[src/path/to/file.ts]].
 
 ---
 
-## Steps
+## Test Cases
 
-1. 
-2. 
-
----
-
-## Expected Result
-
-> Exact outcome — return value, UI state, DB row, event emitted.
+> List of scenarios covered — happy path, error cases, boundary conditions.
 
 ---
 
-## Edge Cases Covered
+## Pass Criteria
 
-| Case | Expected |
-|------|----------|
-| | |
+> What a passing test proves. What invariant is being enforced?
 
 ---
 
-## Test File
+## Failure Criteria
 
-[[code:]] — `describe / it` path:
+> What does a failure mean? What broke?
 
-```
-describe("") > it("")
-```
+---
+
+## Setup / Preconditions
+
+> Fixtures, seed data, env vars, mocks, or state required before tests run.
+
+---
+
+## How to Run
+
+> Command to run this specific test or suite.
+
+---
+
+## Related Code
+
+> Code being tested. Link with [[src/path/to/file.ts]].
+
+---
+
+## Related Task
+
+> Task that created or required this test. Link with [[task-id]].
 
 ---
 
 ## Notes
 
-> Flakiness history, known limitations, env-specific behavior.
+> Flakiness history, env-specific failures, known limitations.
