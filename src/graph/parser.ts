@@ -939,7 +939,7 @@ function detectSeverity(text: string): Constraint["severity"] {
 
 const KNOWN_META_KEYS = new Set(["id", "type", "name", "status", "summary", "updated", "tags", "keywords"]);
 
-export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config): ParsedDocs {
+export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config, indexDocFiles?: FileInfo[]): ParsedDocs {
   const pathSet = new Set(allPaths);
   const bareRx = buildBarePathRx(cfg);
   const docs: DocInfo[] = [];
@@ -951,11 +951,17 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
   // Maps filename stem and filename (with ext) to full doc path for wiki-link resolution
   const docNameIndex = new Map<string, string>();
   const parsedFiles = new Map<string, { content: string; fields: Record<string, FrontmatterValue>; body: string }>();
-  for (const f of docFiles) {
+
+  // Build indices from ALL doc files (indexDocFiles) so cross-file [[id]] links resolve
+  // even when only a subset of docs changed (sync mode). Falls back to docFiles.
+  const docsForIndex = indexDocFiles ?? docFiles;
+  const docFilePaths = new Set(docFiles.map((f) => f.path));
+  for (const f of docsForIndex) {
     let content: string;
     try { content = fs.readFileSync(f.full, "utf-8"); } catch { continue; }
     const { fields, body } = parseFrontmatter(content);
-    parsedFiles.set(f.path, { content, fields, body });
+    // Only store parsed content for files that will be processed (docFiles)
+    if (docFilePaths.has(f.path)) parsedFiles.set(f.path, { content, fields, body });
     const id = typeof fields.id === "string" && fields.id ? fields.id : undefined;
     if (id) docIdIndex.set(id, f.path);
     // Index by filename (e.g. "relationships.md") and stem (e.g. "relationships")

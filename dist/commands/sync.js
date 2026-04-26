@@ -189,9 +189,15 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
             : (0, parser_js_1.resolveCallsAccurate)(resolveEntries, symbolIndex);
         await (0, writer_js_1.writeCalls)(session, newCalls);
         // Re-parse changed doc files.
-        const allPathsRes = await session.run(`MATCH (f:File) RETURN f.path AS p`);
+        // Include both File and Doc paths so wiki [[links]] can resolve to existing doc nodes.
+        const allPathsRes = await session.run(`MATCH (f:File) RETURN f.path AS p
+       UNION
+       MATCH (d:Doc) RETURN d.path AS p`);
         const allPaths = allPathsRes.records.map((r) => r.get("p"));
-        const { docs, planItems, decisions, constraints } = (0, parser_js_1.parseDocs)(docChanged, allPaths, cfg);
+        // Walk all doc files so docIdIndex covers the full project, not just changed files.
+        const { files: allWalkedFiles } = (0, walker_js_1.walkRepo)(cfg);
+        const allDocFiles = allWalkedFiles.filter((f) => docExts.has(f.ext));
+        const { docs, planItems, decisions, constraints } = (0, parser_js_1.parseDocs)(docChanged, allPaths, cfg, allDocFiles);
         await (0, writer_js_1.writeDocs)(session, docs);
         await (0, writer_js_1.writeDocLinks)(session, docs);
         await (0, writer_js_1.writePlanItems)(session, planItems);

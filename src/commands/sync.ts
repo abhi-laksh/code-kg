@@ -211,9 +211,17 @@ export async function applyBatch(
     await writeCalls(session, newCalls);
 
     // Re-parse changed doc files.
-    const allPathsRes = await session.run(`MATCH (f:File) RETURN f.path AS p`);
+    // Include both File and Doc paths so wiki [[links]] can resolve to existing doc nodes.
+    const allPathsRes = await session.run(
+      `MATCH (f:File) RETURN f.path AS p
+       UNION
+       MATCH (d:Doc) RETURN d.path AS p`,
+    );
     const allPaths = allPathsRes.records.map((r) => r.get("p") as string);
-    const { docs, planItems, decisions, constraints } = parseDocs(docChanged, allPaths, cfg);
+    // Walk all doc files so docIdIndex covers the full project, not just changed files.
+    const { files: allWalkedFiles } = walkRepo(cfg);
+    const allDocFiles = allWalkedFiles.filter((f) => docExts.has(f.ext));
+    const { docs, planItems, decisions, constraints } = parseDocs(docChanged, allPaths, cfg, allDocFiles);
     await writeDocs(session, docs);
     await writeDocLinks(session, docs);
     await writePlanItems(session, planItems);

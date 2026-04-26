@@ -958,7 +958,7 @@ function detectSeverity(text) {
     return "nice";
 }
 const KNOWN_META_KEYS = new Set(["id", "type", "name", "status", "summary", "updated", "tags", "keywords"]);
-function parseDocs(docFiles, allPaths, cfg) {
+function parseDocs(docFiles, allPaths, cfg, indexDocFiles) {
     const pathSet = new Set(allPaths);
     const bareRx = buildBarePathRx(cfg);
     const docs = [];
@@ -969,7 +969,11 @@ function parseDocs(docFiles, allPaths, cfg) {
     // Maps filename stem and filename (with ext) to full doc path for wiki-link resolution
     const docNameIndex = new Map();
     const parsedFiles = new Map();
-    for (const f of docFiles) {
+    // Build indices from ALL doc files (indexDocFiles) so cross-file [[id]] links resolve
+    // even when only a subset of docs changed (sync mode). Falls back to docFiles.
+    const docsForIndex = indexDocFiles ?? docFiles;
+    const docFilePaths = new Set(docFiles.map((f) => f.path));
+    for (const f of docsForIndex) {
         let content;
         try {
             content = fs_1.default.readFileSync(f.full, "utf-8");
@@ -978,7 +982,9 @@ function parseDocs(docFiles, allPaths, cfg) {
             continue;
         }
         const { fields, body } = parseFrontmatter(content);
-        parsedFiles.set(f.path, { content, fields, body });
+        // Only store parsed content for files that will be processed (docFiles)
+        if (docFilePaths.has(f.path))
+            parsedFiles.set(f.path, { content, fields, body });
         const id = typeof fields.id === "string" && fields.id ? fields.id : undefined;
         if (id)
             docIdIndex.set(id, f.path);

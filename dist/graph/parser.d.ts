@@ -30,5 +30,5 @@ type SymbolIndex = Map<string, SymbolInfo>;
 export declare function buildSymbolIndex(symbols: SymbolInfo[]): SymbolIndex;
 export declare function resolveCallsAccurate(entries: ParsedCode[], idx: SymbolIndex): CallEdge[];
 export declare function resolveCallsFast(entries: ParsedCode[], idx: SymbolIndex): CallEdge[];
-export declare function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config): ParsedDocs;
+export declare function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config, indexDocFiles?: FileInfo[]): ParsedDocs;
 export {};
