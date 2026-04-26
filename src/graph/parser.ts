@@ -803,10 +803,30 @@ function looksLikePath(target: string): boolean {
   return target.includes("/") || PLANNED_PATH_RE.test(target);
 }
 
+function buildDocSuffixIndex(docPaths: string[]): Map<string, string> {
+  const idx = new Map<string, string>();
+  for (const docPath of docPaths) {
+    const stem = docPath.replace(/\.mdx?$/, "");
+    // Generate all sub-path suffixes that contain at least one "/"
+    const parts = docPath.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const suffix = parts.slice(i).join("/");
+      const suffixStem = suffix.replace(/\.mdx?$/, "");
+      if (!idx.has(suffix)) idx.set(suffix, docPath);
+      if (!idx.has(suffixStem)) idx.set(suffixStem, docPath);
+    }
+    // Full path itself (with and without ext) — catches exact doc path refs
+    if (!idx.has(docPath)) idx.set(docPath, docPath);
+    if (!idx.has(stem)) idx.set(stem, docPath);
+  }
+  return idx;
+}
+
 function resolveWikiLink(
   target: string,
   docIdIndex: Map<string, string>,
   docNameIndex: Map<string, string>,
+  docSuffixIndex: Map<string, string>,
   pathSet: Set<string>,
 ): { kind: "doc" | "code" | "planned"; path: string } | null {
   if (pathSet.has(target)) return { kind: "code", path: target };
@@ -818,6 +838,12 @@ function resolveWikiLink(
   // Match by filename stem or filename (handles [[relationships]] or [[relationships.md]])
   const byName = docNameIndex.get(target) ?? (withMd ? docNameIndex.get(withMd) : null);
   if (byName) return { kind: "doc", path: byName };
+  // Obsidian-style partial path suffix match — [[tools/hono]] → docs/api/tools/hono.md
+  // Only for targets with "/" to avoid re-checking bare stems already handled above
+  if (target.includes("/")) {
+    const bySuffix = docSuffixIndex.get(target) ?? (withMd ? docSuffixIndex.get(withMd) : null);
+    if (bySuffix) return { kind: "doc", path: bySuffix };
+  }
   if (looksLikePath(target)) return { kind: "planned", path: target };
   return null;
 }
@@ -970,6 +996,8 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config,
     if (!docNameIndex.has(fname)) docNameIndex.set(fname, f.path);
     if (!docNameIndex.has(stem)) docNameIndex.set(stem, f.path);
   }
+  // Obsidian-style partial path suffix index — [[tools/hono]] resolves to doc by path suffix
+  const docSuffixIndex = buildDocSuffixIndex(docsForIndex.map((f) => f.path));
 
   for (const f of docFiles) {
     const parsed = parsedFiles.get(f.path);
@@ -988,7 +1016,7 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config,
     const docLinks: string[] = [];
     const plannedPaths: string[] = [];
     for (const target of allWikiTargets) {
-      const resolved = resolveWikiLink(target, docIdIndex, docNameIndex, pathSet);
+      const resolved = resolveWikiLink(target, docIdIndex, docNameIndex, docSuffixIndex, pathSet);
       if (!resolved) continue;
       if (resolved.kind === "doc") { if (!docLinks.includes(resolved.path)) docLinks.push(resolved.path); }
       else if (resolved.kind === "planned") { if (!plannedPaths.includes(resolved.path)) plannedPaths.push(resolved.path); }
