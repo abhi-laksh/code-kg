@@ -11,89 +11,28 @@ exports.buildFileInfo = buildFileInfo;
 exports.ancestorFolders = ancestorFolders;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const ignore_1 = __importDefault(require("ignore"));
 const config_js_1 = require("../config.js");
 // ── path utils ────────────────────────────────────────────────────────────────
 function normalizePath(p) {
     return p.split(path_1.default.sep).join("/");
 }
-function escapeRegex(v) {
-    return v.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-}
-function globToRegExp(pattern) {
-    let out = "^";
-    for (let i = 0; i < pattern.length; i++) {
-        const c = pattern[i];
-        const next = pattern[i + 1];
-        if (c === "*") {
-            if (next === "*") {
-                out += ".*";
-                i++;
-                if (pattern[i + 1] === "/")
-                    i++;
-            }
-            else {
-                out += "[^/]*";
-            }
-        }
-        else if (c === "?") {
-            out += "[^/]";
-        }
-        else if (c === "/") {
-            out += "\\/";
-        }
-        else {
-            out += escapeRegex(c);
-        }
+// ── ignore engine (gitignore + .codekgignore via `ignore` pkg) ────────────────
+function buildIgnoreEngine() {
+    const ig = (0, ignore_1.default)();
+    for (const name of [".gitignore", ".codekgignore"]) {
+        const p = path_1.default.join(config_js_1.ROOT, name);
+        if (fs_1.default.existsSync(p))
+            ig.add(fs_1.default.readFileSync(p, "utf-8"));
     }
-    return new RegExp(out + "$");
+    return ig;
 }
-function loadGitignoreRules() {
-    const p = path_1.default.join(config_js_1.ROOT, ".gitignore");
-    if (!fs_1.default.existsSync(p))
-        return [];
-    return fs_1.default
-        .readFileSync(p, "utf-8")
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter((l) => l && !l.startsWith("#"))
-        .map((l) => {
-        const negate = l.startsWith("!");
-        const raw = negate ? l.slice(1) : l;
-        const norm = normalizePath(raw);
-        const anchored = norm.startsWith("/");
-        const directoryOnly = norm.endsWith("/");
-        const source = directoryOnly ? norm.slice(0, -1) : norm;
-        const stripped = anchored ? source.slice(1) : source;
-        return { negate, raw, anchored, directoryOnly, regex: globToRegExp(stripped), normalizedSource: stripped };
-    });
-}
-function buildIgnoreMatcher(rules) {
-    return function isIgnored(relPath) {
-        const normalized = normalizePath(relPath);
-        const parts = normalized.split("/");
-        let ignored = false;
-        for (const rule of rules) {
-            const candidates = [];
-            if (rule.anchored) {
-                candidates.push(normalized);
-            }
-            else {
-                candidates.push(normalized, ...parts);
-                for (let i = 1; i < parts.length; i++)
-                    candidates.push(parts.slice(i).join("/"));
-            }
-            const matched = candidates.some((c) => {
-                if (!c)
-                    return false;
-                if (rule.directoryOnly) {
-                    return c === rule.normalizedSource || c.startsWith(`${rule.normalizedSource}/`) || rule.regex.test(c);
-                }
-                return rule.regex.test(c);
-            });
-            if (matched)
-                ignored = !rule.negate;
-        }
-        return ignored;
+function buildIgnoreMatcher(ig) {
+    return (relPath) => {
+        const norm = normalizePath(relPath);
+        if (!norm || norm === ".")
+            return false;
+        return ig.ignores(norm);
     };
 }
 // ── file classification ───────────────────────────────────────────────────────
@@ -153,8 +92,8 @@ function classifyFile(relPath, cfg, entryPatterns) {
     return { ext, language: LANGUAGE_MAP[ext] ?? (ext.slice(1) || "unknown"), kind, isTest, isGenerated, isEntryPoint };
 }
 function walkRepo(cfg) {
-    const rules = loadGitignoreRules();
-    const isIgnored = buildIgnoreMatcher(rules);
+    const ig = buildIgnoreEngine();
+    const isIgnored = buildIgnoreMatcher(ig);
     const entryPatterns = buildEntryPatterns(cfg);
     const ignoreSet = new Set(cfg.ignoreDirs);
     const folders = [];

@@ -40,7 +40,7 @@ async function runWatch(cfg, fast = false) {
         const changed = [];
         const removed = [];
         for (const [p, info] of pending.entries()) {
-            if (isIgnored(p) || cfg.ignoreDirs.some((seg) => p.split("/").includes(seg)))
+            if (isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg)))
                 continue;
             (info.exists ? changed : removed).push(p);
         }

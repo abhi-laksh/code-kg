@@ -1,164 +1,141 @@
 # Project Brain
 
-A knowledge graph documentation system for software projects.
-Designed to answer *what exists*, *how it's built*, *what's done*, and *what's pending* — with minimum tokens and zero directory crawling.
+Knowledge graph documentation for this codebase.
+Every `.md` file is a node. Every `[[link]]` is an edge. Neo4j holds the graph.
 
 ---
 
-## Concept
+## How It Works
 
 ```
-Graph (Neo4j)      →  fast traversal, relationships, status queries
-Frontmatter        →  node properties, AI reads this without opening body
-Body               →  deep content, opened only when needed
+Source files  →  parsed by ts-morph  →  Symbols, Calls, Imports, Types in Neo4j
+Docs (.md)    →  parsed by code-kg   →  Doc nodes, TARGETS/CONNECTS edges in Neo4j
+[[links]]     →  become graph edges  →  connect docs to code, other docs, planned files
 ```
 
-Every `.md` file is a **node**. Every `[[ns:id]]` link is an **edge**.
-The frontmatter `summary` field is what AI tools read during traversal — keep it precise and one sentence.
+**Frontmatter `summary`** — what AI reads during graph traversal. Keep it one sentence, precise.
+**Body** — opened only when frontmatter isn't enough.
 
 ---
 
-## Folder Structure
+## Doc Types
 
-```
-/
-├── README.md                         ← you are here
-├── relationships.md                  ← all edge types and link syntax
-├── templates/                        ← blank frontmatter for every doc type
-│
-├── architecture/                     ← system-wide, not feature-scoped
-│   ├── overview.md
-│   ├── data-flow.md
-│   ├── tech-stack.md
-│   └── decisions/
-│       └── adr-001.md
-│
-└── features/
-    ├── _index.md                     ← master feature registry
-    └── auth/                         ← one folder per feature
-        ├── _index.md                 ← feature hub node
-        ├── flows/
-        │   └── login.md
-        ├── errors/
-        │   └── invalid-token.md
-        ├── edge-cases/
-        │   └── token-rotation-race.md
-        ├── test-cases/
-        │   └── login-success.md
-        ├── tasks/
-        │   ├── _index.md             ← task registry for this feature
-        │   └── auth-t-001.md
-        ├── fe/
-        │   ├── _index.md
-        │   ├── pages/
-        │   ├── components/
-        │   └── state/
-        └── be/
-            ├── _index.md
-            └── auth-service/         ← subfeature (service, controller, etc.)
-                ├── _index.md
-                ├── generate-token.md ← individual function doc
-                └── tasks/            ← subfeature-scoped tasks (optional)
-```
-
----
-
-## Doc Types & Templates
-
-Pick the right template from `/templates/` for every new file.
-
-| Template | Use For |
-|---|---|
-| `feature-index.md` | Every feature's `_index.md` hub |
-| `subfeature-index.md` | `fe/_index.md`, `be/_index.md`, `be/auth-service/_index.md` |
-| `task.md` | Any unit of work |
-| `flow.md` | User or system flows |
-| `error.md` | A specific error condition |
-| `edge-case.md` | Known edge cases |
-| `test-case.md` | Test scenarios |
-| `fe-page.md` | A frontend page/route |
-| `fe-component.md` | A UI component |
-| `fe-state.md` | A frontend store or state slice |
-| `be-function.md` | A documented function or method |
-| `architecture.md` | System-wide design docs |
-| `adr.md` | Architecture Decision Records |
-
----
-
-## ID Convention
-
-```
-{type-prefix}-{feature}-{number}
-
-feat-auth-000          ← feature hub
-task-auth-012          ← task
-flow-auth-login-001    ← flow
-err-auth-003           ← error
-edge-auth-005          ← edge case
-test-auth-001          ← test case
-page-auth-001          ← FE page
-comp-auth-guard-001    ← FE component
-state-auth-store-001   ← FE state
-sfeat-auth-service-001 ← subfeature
-fn-auth-gentoken-001   ← function
-adr-003                ← architecture decision
-```
+| Type | Use for | Command |
+|---|---|---|
+| `architecture` | Full system — stack, infra, cloud, APIs, decisions | `code-kg new architecture <path>` |
+| `app` | A service or application | `code-kg new app <path>` |
+| `feature` | A product feature or sub-feature | `code-kg new feature <path>` |
+| `task` | A unit of work — task, subtask, migration, refactor | `code-kg new task <path>` |
+| `code` | A function, service, component, schema | `code-kg new code <path>` |
+| `test` | A test suite or scenario | `code-kg new test <path>` |
+| `edge-case` | A specific edge case and how it's handled | `code-kg new edge-case <path>` |
+| `tool` | A library, SDK, CLI, or external service | `code-kg new tool <path>` |
 
 ---
 
 ## Link Syntax
 
-Cross-reference anything with `[[namespace:identifier]]`.
+One format. Two targets.
 
 ```
-[[feature:auth]]                      → auth feature hub
-[[feature:auth/be/auth-service]]      → auth-service subfeature
-[[code:auth.service.ts]]              → source file node
-[[code:generateToken()]]              → function node (parens = function)
-[[code:UserSchema]]                   → class/schema node (PascalCase = class)
-[[task:auth-t-012]]                   → task by ID
-[[flow:auth.login]]                   → named flow
-[[arch:decisions/adr-003]]            → ADR
-[[error:auth.invalid-token]]          → error doc
-[[test:auth.login-success]]           → test case
-[[edge:auth.token-race]]              → edge case
+[[src/path/to/file.ts]]     → links to a code file (creates TARGETS edge)
+[[some-doc-id]]             → links to a doc by its frontmatter id (creates CONNECTS edge)
 ```
 
-See `relationships.md` for the full list of namespaces and the Neo4j edges they produce.
+**File doesn't exist yet?** — a `File {planned: true}` node is created. When the file is eventually created and synced, it upgrades to a real node automatically.
+
+Links work anywhere — body text, frontmatter field values, checkboxes.
+
+```markdown
+The auth flow lives in [[src/auth/auth.service.ts]].
+Depends on [[tool-prisma]] and [[arch-database]].
+Will be implemented in [[src/payments/stripe.service.ts]].   ← planned node
+```
 
 ---
 
-## Adding a New Feature
+## ID Convention
+
+Set the `id` field in frontmatter. No strict format — just be consistent.
 
 ```
-1. Create  features/{name}/
-2. Copy    templates/feature-index.md  →  features/{name}/_index.md
-3. Fill    id, name, summary, status, depends_on, used_by
-4. Add     features/{name}/ to features/_index.md
-5. Create  be/ and fe/ subdirs with subfeature-index.md
-6. Add     tasks before starting any work
-7. Run     ingestion script to sync with Neo4j
+arch-database          ← architecture doc
+app-backend            ← app doc
+feature-auth           ← feature
+feature-auth-oauth     ← sub-feature
+task-auth-001          ← task
+code-auth-service      ← code doc
+test-auth-login        ← test
+edge-token-expiry      ← edge case
+tool-prisma            ← tool
 ```
+
+---
+
+## CLI
+
+```sh
+code-kg init                    # configure Neo4j connection
+code-kg init-templates          # scaffold templates interactively
+code-kg add-guidelines          # copy query guidelines to project root
+
+code-kg new <type> <path>       # create a doc from template
+code-kg sync                    # sync changed files to graph (auto-detects via git)
+code-kg sync <paths...>         # sync specific files
+code-kg watch                   # watch for changes and sync automatically
+code-kg rebuild                 # wipe and re-index everything from scratch
+
+code-kg review                  # find coverage gaps — unindexed files, undocumented code
+code-kg review --json           # machine-readable output
+code-kg ping                    # verify Neo4j connection and show graph stats
+```
+
+---
+
+## Graph — What's Indexed
+
+**From source code (automatic):**
+- Every function, class, method, interface, type, enum, property → `Symbol` node
+- Calls, imports, inheritance, decorators, throws, type references → edges
+- Symbols carry: signature, jsdoc, parameters, return type, visibility, async/abstract flags
+
+**From docs (from `[[links]]` and frontmatter):**
+- Every `.md` file → `Doc` node
+- Checkboxes → `PlanItem` nodes
+- `[[file-path]]` → `TARGETS` edge to `File`
+- `[[doc-id]]` → `CONNECTS` edge to `Doc`
 
 ---
 
 ## AI Query Strategy
 
-AI tools should follow this order — stop as early as the question is answered:
+Stop as early as the question is answered:
 
 ```
-1. Query Neo4j          →  status, progress, blocked tasks, relationships
-2. Read frontmatter     →  summary, children, depends_on fields
-3. Read file body       →  only if frontmatter is insufficient
+1. Graph query   →  relationships, status, what calls what, what's undocumented
+2. Doc nodes     →  summary, metadata, linked files
+3. File body     →  only when graph + frontmatter isn't enough
 ```
 
-Common queries:
+Example queries:
 
-| Question | Where to look |
-|---|---|
-| What features exist and their status? | `features/_index.md` |
-| What tasks are blocked? | Neo4j: `MATCH (t:task {status:"blocked"})` |
-| What code does feature X touch? | Traverse `REFERENCES_CODE` edges from feature subgraph |
-| How does flow X work? | `features/{name}/flows/x.md` body |
-| What depends on component X? | Traverse incoming `USED_BY` edges |
-| What's the decision behind X? | Traverse `AFFECTED_BY` → decision node |
+```cypher
+// All async functions that throw
+MATCH (s:Symbol {async: true})-[:THROWS]->(e:Symbol)
+RETURN s.name, s.file, e.name
+
+// Planned files not yet created
+MATCH (d:Doc)-[:TARGETS]->(f:File {planned: true})
+RETURN d.path, f.path
+
+// Exported symbols with no doc
+MATCH (s:Symbol {isExported: true})
+WHERE NOT ()-[:TARGETS]->(:File {path: s.file})
+RETURN s.name, s.file
+
+// All classes implementing an interface
+MATCH (c:Symbol {kind: 'class'})-[:IMPLEMENTS]->(i:Symbol {name: 'IUserRepository'})
+RETURN c.name, c.file
+```
+
+See `QUERY_GUIDELINES.md` for best practices and anti-patterns.

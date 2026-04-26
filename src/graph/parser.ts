@@ -806,11 +806,18 @@ function looksLikePath(target: string): boolean {
 function resolveWikiLink(
   target: string,
   docIdIndex: Map<string, string>,
+  docNameIndex: Map<string, string>,
   pathSet: Set<string>,
 ): { kind: "doc" | "code" | "planned"; path: string } | null {
   if (pathSet.has(target)) return { kind: "code", path: target };
   const docPath = docIdIndex.get(target);
   if (docPath) return { kind: "doc", path: docPath };
+  // Auto-assume .md when target has no extension — e.g. [[relationships]] → relationships.md
+  const withMd = /\.[a-z]{1,6}$/i.test(target) ? null : target + ".md";
+  if (withMd && pathSet.has(withMd)) return { kind: "doc", path: withMd };
+  // Match by filename stem or filename (handles [[relationships]] or [[relationships.md]])
+  const byName = docNameIndex.get(target) ?? (withMd ? docNameIndex.get(withMd) : null);
+  if (byName) return { kind: "doc", path: byName };
   if (looksLikePath(target)) return { kind: "planned", path: target };
   return null;
 }
@@ -941,6 +948,8 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
   const constraints: Constraint[] = [];
 
   const docIdIndex = new Map<string, string>();
+  // Maps filename stem and filename (with ext) to full doc path for wiki-link resolution
+  const docNameIndex = new Map<string, string>();
   const parsedFiles = new Map<string, { content: string; fields: Record<string, FrontmatterValue>; body: string }>();
   for (const f of docFiles) {
     let content: string;
@@ -949,6 +958,11 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
     parsedFiles.set(f.path, { content, fields, body });
     const id = typeof fields.id === "string" && fields.id ? fields.id : undefined;
     if (id) docIdIndex.set(id, f.path);
+    // Index by filename (e.g. "relationships.md") and stem (e.g. "relationships")
+    const fname = path.basename(f.path);
+    const stem = fname.replace(/\.mdx?$/, "");
+    if (!docNameIndex.has(fname)) docNameIndex.set(fname, f.path);
+    if (!docNameIndex.has(stem)) docNameIndex.set(stem, f.path);
   }
 
   for (const f of docFiles) {
@@ -968,7 +982,7 @@ export function parseDocs(docFiles: FileInfo[], allPaths: string[], cfg: Config)
     const docLinks: string[] = [];
     const plannedPaths: string[] = [];
     for (const target of allWikiTargets) {
-      const resolved = resolveWikiLink(target, docIdIndex, pathSet);
+      const resolved = resolveWikiLink(target, docIdIndex, docNameIndex, pathSet);
       if (!resolved) continue;
       if (resolved.kind === "doc") { if (!docLinks.includes(resolved.path)) docLinks.push(resolved.path); }
       else if (resolved.kind === "planned") { if (!plannedPaths.includes(resolved.path)) plannedPaths.push(resolved.path); }

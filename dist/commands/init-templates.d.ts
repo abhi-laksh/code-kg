@@ -1,1 +1,1 @@
-export declare function runInitTemplates(): void;
+export declare function runInitTemplates(): Promise<void>;

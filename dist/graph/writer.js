@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.writeIntersectionOf = exports.writeUnionOf = exports.writeInstantiates = exports.writeReferencesType = exports.writeThrows = exports.writeDecoratedBy = exports.writeOverrides = exports.writeImplements = exports.writeExtends = void 0;
 exports.ensureSchema = ensureSchema;
 exports.ensureProjectRoot = ensureProjectRoot;
 exports.writeFolders = writeFolders;
@@ -7,6 +8,8 @@ exports.writeFiles = writeFiles;
 exports.writeSymbols = writeSymbols;
 exports.writeImports = writeImports;
 exports.writeCalls = writeCalls;
+exports.writeReExports = writeReExports;
+exports.writeImportTypes = writeImportTypes;
 exports.writeDocs = writeDocs;
 exports.writeDocLinks = writeDocLinks;
 exports.writePlanItems = writePlanItems;
@@ -18,6 +21,7 @@ exports.deleteImportsFor = deleteImportsFor;
 exports.deleteCallsTouching = deleteCallsTouching;
 exports.deleteDoc = deleteDoc;
 exports.gcEmptyFolders = gcEmptyFolders;
+exports.gcOrphanFiles = gcOrphanFiles;
 exports.collectCounts = collectCounts;
 exports.diffCounts = diffCounts;
 const driver_js_1 = require("./driver.js");
@@ -39,8 +43,18 @@ async function ensureSchema(session) {
         `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.docType)`,
         `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.status)`,
         `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.name)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.kind)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.isExported)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.returnType)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.async)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.visibility)`,
+        `CREATE INDEX IF NOT EXISTS FOR (s:Symbol) ON (s.parentName)`,
         `CREATE INDEX IF NOT EXISTS FOR (f:File) ON (f.name)`,
+        `CREATE INDEX IF NOT EXISTS FOR (f:File) ON (f.kind)`,
+        `CREATE INDEX IF NOT EXISTS FOR (f:File) ON (f.planned)`,
+        `CREATE INDEX IF NOT EXISTS FOR (d:Doc) ON (d.scope)`,
         `CREATE FULLTEXT INDEX doc_fulltext IF NOT EXISTS FOR (n:Doc) ON EACH [n.title, n.name, n.summary, n.keywords]`,
+        `CREATE FULLTEXT INDEX symbol_fulltext IF NOT EXISTS FOR (n:Symbol) ON EACH [n.name, n.jsdoc, n.signature]`,
     ];
     for (const s of stmts)
         await session.run(s);
@@ -81,7 +95,8 @@ async function writeFiles(session, files) {
          file.isGenerated = f.isGenerated,
          file.isTest      = f.isTest,
          file.lineCount   = f.lineCount,
-         file.external    = false
+         file.external    = false,
+         file.planned     = null
      WITH file, f,
           CASE WHEN f.path CONTAINS "/"
                THEN substring(f.path, 0, size(f.path) - size(f.name) - 1)
@@ -101,16 +116,38 @@ async function writeSymbols(session, symbols) {
         return;
     await session.run(`UNWIND $symbols AS s
      MERGE (sym:Symbol {file: s.file, name: s.name, startLine: s.startLine})
-     SET sym.kind      = s.kind,
-         sym.endLine   = s.endLine,
-         sym.signature = s.signature,
-         sym.isExported = s.isExported
+     SET sym.kind          = s.kind,
+         sym.endLine        = s.endLine,
+         sym.signature      = s.signature,
+         sym.isExported     = s.isExported,
+         sym.parentName     = s.parentName,
+         sym.jsdoc          = s.jsdoc,
+         sym.async          = s.async,
+         sym.abstract       = s.abstract,
+         sym.static         = s.static,
+         sym.visibility     = s.visibility,
+         sym.returnType     = s.returnType,
+         sym.parameters     = s.parameters,
+         sym.parameterTypes = s.parameterTypes,
+         sym.genericParams  = s.genericParams,
+         sym.decoratorNames = s.decoratorNames
      MERGE (f:File {path: s.file})
      MERGE (f)-[:DEFINES]->(sym)`, {
         symbols: symbols.map((s) => ({
             file: s.file, name: s.name, kind: s.kind,
             startLine: (0, driver_js_1.toInt)(s.startLine), endLine: (0, driver_js_1.toInt)(s.endLine),
             signature: s.signature, isExported: !!s.isExported,
+            parentName: s.parentName ?? null,
+            jsdoc: s.jsdoc ?? null,
+            async: s.async ?? null,
+            abstract: s.abstract ?? null,
+            static: s.static ?? null,
+            visibility: s.visibility ?? null,
+            returnType: s.returnType ?? null,
+            parameters: s.parameters ?? null,
+            parameterTypes: s.parameterTypes ?? null,
+            genericParams: s.genericParams ?? null,
+            decoratorNames: s.decoratorNames ?? null,
         })),
     });
 }
@@ -147,6 +184,65 @@ async function writeCalls(session, calls) {
         })),
     });
 }
+// ── symbol → symbol edges ─────────────────────────────────────────────────────
+function mapSymbolEdges(edges) {
+    return edges.map((e) => ({
+        from: { ...e.from, startLine: (0, driver_js_1.toInt)(e.from.startLine) },
+        to: { ...e.to, startLine: (0, driver_js_1.toInt)(e.to.startLine) },
+    }));
+}
+async function writeSymbolEdges(session, edges, rel) {
+    if (!edges.length)
+        return;
+    await session.run(`UNWIND $edges AS e
+     MATCH (a:Symbol {file: e.from.file, name: e.from.name, startLine: e.from.startLine})
+     MATCH (b:Symbol {file: e.to.file,   name: e.to.name,   startLine: e.to.startLine})
+     MERGE (a)-[:${rel}]->(b)`, { edges: mapSymbolEdges(edges) });
+}
+const writeExtends = (s, e) => writeSymbolEdges(s, e, "EXTENDS");
+exports.writeExtends = writeExtends;
+const writeImplements = (s, e) => writeSymbolEdges(s, e, "IMPLEMENTS");
+exports.writeImplements = writeImplements;
+const writeOverrides = (s, e) => writeSymbolEdges(s, e, "OVERRIDES");
+exports.writeOverrides = writeOverrides;
+const writeDecoratedBy = (s, e) => writeSymbolEdges(s, e, "DECORATED_BY");
+exports.writeDecoratedBy = writeDecoratedBy;
+const writeThrows = (s, e) => writeSymbolEdges(s, e, "THROWS");
+exports.writeThrows = writeThrows;
+const writeReferencesType = (s, e) => writeSymbolEdges(s, e, "REFERENCES_TYPE");
+exports.writeReferencesType = writeReferencesType;
+const writeInstantiates = (s, e) => writeSymbolEdges(s, e, "INSTANTIATES");
+exports.writeInstantiates = writeInstantiates;
+const writeUnionOf = (s, e) => writeSymbolEdges(s, e, "UNION_OF");
+exports.writeUnionOf = writeUnionOf;
+const writeIntersectionOf = (s, e) => writeSymbolEdges(s, e, "INTERSECTION_OF");
+exports.writeIntersectionOf = writeIntersectionOf;
+async function writeReExports(session, edges) {
+    if (!edges.length)
+        return;
+    await session.run(`UNWIND $edges AS e
+     MATCH (f:File {path: e.file})
+     MATCH (s:Symbol {file: e.symbol.file, name: e.symbol.name, startLine: e.symbol.startLine})
+     MERGE (f)-[:RE_EXPORTS]->(s)`, { edges: edges.map((e) => ({ file: e.file, symbol: { ...e.symbol, startLine: (0, driver_js_1.toInt)(e.symbol.startLine) } })) });
+}
+async function writeImportTypes(session, rawImports) {
+    if (!rawImports.length)
+        return;
+    const resolved = rawImports.map((i) => {
+        const { target, external } = (0, parser_js_1.resolveImport)(i.from, i.to);
+        return { from: i.from, to: target, external };
+    });
+    await session.run(`UNWIND $imports AS i
+     MERGE (a:File {path: i.from})
+     FOREACH (_ IN CASE WHEN i.external     THEN [1] ELSE [] END |
+       MERGE (b:ExternalModule {name: i.to})
+       MERGE (a)-[:IMPORTS_TYPE]->(b)
+     )
+     FOREACH (_ IN CASE WHEN NOT i.external THEN [1] ELSE [] END |
+       MERGE (b:File {path: i.to}) ON CREATE SET b.external = false
+       MERGE (a)-[:IMPORTS_TYPE]->(b)
+     )`, { imports: resolved });
+}
 // ── docs ──────────────────────────────────────────────────────────────────────
 async function writeDocs(session, docs) {
     if (!docs.length)
@@ -168,7 +264,11 @@ async function writeDocs(session, docs) {
      WITH doc, d
      UNWIND d.targetPaths AS tp
      MATCH (t) WHERE (t:File OR t:Folder) AND t.path = tp
-     MERGE (doc)-[:TARGETS]->(t)`, {
+     MERGE (doc)-[:TARGETS]->(t)
+     WITH doc, d
+     UNWIND CASE WHEN d.plannedPaths IS NULL THEN [] ELSE d.plannedPaths END AS pp
+     MERGE (pf:File {path: pp}) ON CREATE SET pf.planned = true
+     MERGE (doc)-[:TARGETS]->(pf)`, {
         docs: docs.map((d) => ({
             ...d,
             meta: d.meta != null ? JSON.stringify(d.meta) : null,
@@ -233,7 +333,7 @@ async function deleteSymbolsFor(session, p) {
     await session.run(`MATCH (f:File {path:$p})-[:DEFINES]->(s:Symbol) DETACH DELETE s`, { p });
 }
 async function deleteImportsFor(session, p) {
-    await session.run(`MATCH (:File {path:$p})-[r:IMPORTS]->() DELETE r`, { p });
+    await session.run(`MATCH (:File {path:$p})-[r:IMPORTS|IMPORTS_TYPE|RE_EXPORTS]->() DELETE r`, { p });
 }
 async function deleteCallsTouching(session, paths) {
     if (!paths.length)
@@ -247,7 +347,17 @@ async function deleteDoc(session, p) {
     await session.run(`MATCH (d:Doc {path:$p}) DETACH DELETE d`, { p });
 }
 async function gcEmptyFolders(session) {
-    await session.run(`MATCH (d:Folder) WHERE d.path <> "." AND NOT (d)-[:CONTAINS]->() DETACH DELETE d`);
+    // Loop until stable — single pass misses parent folders whose only child was just deleted.
+    let deleted = 1;
+    while (deleted > 0) {
+        const res = await session.run(`MATCH (d:Folder) WHERE d.path <> "." AND NOT (d)-[:CONTAINS]->() DETACH DELETE d`);
+        deleted = res.summary.counters.updates().nodesDeleted;
+    }
+}
+async function gcOrphanFiles(session) {
+    // Delete stub File nodes (created by writeImports for unresolved imports) but NOT planned
+    // nodes (created by writeDocs for future/planned code artifacts).
+    await session.run(`MATCH (f:File) WHERE NOT ()-[:CONTAINS]->(f) AND f.planned IS NULL DETACH DELETE f`);
 }
 // ── counts ────────────────────────────────────────────────────────────────────
 async function collectCounts(session) {
@@ -261,17 +371,33 @@ async function collectCounts(session) {
     CALL () { MATCH (n:PlanItem)      RETURN count(n) AS c } WITH pc, fc, fic, emc, sc, dc, c AS pic
     CALL () { MATCH (n:Decision)      RETURN count(n) AS c } WITH pc, fc, fic, emc, sc, dc, pic, c AS dec
     CALL () { MATCH (n:Constraint)    RETURN count(n) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, c AS cc
-    CALL () { MATCH ()-[r:IMPORTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, c AS ic
-    CALL () { MATCH ()-[r:CALLS]->()   RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, c AS cac
-    CALL () { MATCH ()-[r:CONNECTS]->() RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, c AS conc
-    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, cac, conc
+    CALL () { MATCH ()-[r:IMPORTS]->()          RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, c AS ic
+    CALL () { MATCH ()-[r:IMPORTS_TYPE]->()     RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, c AS itc
+    CALL () { MATCH ()-[r:CALLS]->()            RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, c AS cac
+    CALL () { MATCH ()-[r:CONNECTS]->()         RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, c AS conc
+    CALL () { MATCH ()-[r:EXTENDS]->()          RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, c AS exc
+    CALL () { MATCH ()-[r:IMPLEMENTS]->()       RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, c AS imc
+    CALL () { MATCH ()-[r:OVERRIDES]->()        RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, c AS ovc
+    CALL () { MATCH ()-[r:DECORATED_BY]->()     RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, c AS dbc
+    CALL () { MATCH ()-[r:THROWS]->()           RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, c AS thc
+    CALL () { MATCH ()-[r:REFERENCES_TYPE]->()  RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, c AS rtc
+    CALL () { MATCH ()-[r:INSTANTIATES]->()     RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, rtc, c AS inc
+    CALL () { MATCH ()-[r:UNION_OF]->()         RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, rtc, inc, c AS uoc
+    CALL () { MATCH ()-[r:INTERSECTION_OF]->()  RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, rtc, inc, uoc, c AS ioc
+    CALL () { MATCH ()-[r:RE_EXPORTS]->()       RETURN count(r) AS c } WITH pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, rtc, inc, uoc, ioc, c AS rec
+    RETURN pc, fc, fic, emc, sc, dc, pic, dec, cc, ic, itc, cac, conc, exc, imc, ovc, dbc, thc, rtc, inc, uoc, ioc, rec
   `);
     const r = (0, driver_js_1.unwrapRecord)(res.records[0]);
     return {
         Project: r.pc, Folder: r.fc, File: r.fic,
         ExternalModule: r.emc, Symbol: r.sc, Doc: r.dc,
         PlanItem: r.pic, Decision: r.dec, Constraint: r.cc,
-        IMPORTS: r.ic, CALLS: r.cac, CONNECTS: r.conc,
+        IMPORTS: r.ic, IMPORTS_TYPE: r.itc,
+        CALLS: r.cac, CONNECTS: r.conc,
+        EXTENDS: r.exc, IMPLEMENTS: r.imc, OVERRIDES: r.ovc,
+        DECORATED_BY: r.dbc, THROWS: r.thc,
+        REFERENCES_TYPE: r.rtc, INSTANTIATES: r.inc,
+        UNION_OF: r.uoc, INTERSECTION_OF: r.ioc, RE_EXPORTS: r.rec,
     };
 }
 function diffCounts(before, after) {

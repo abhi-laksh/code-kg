@@ -9,30 +9,42 @@ const path_1 = __importDefault(require("path"));
 const config_js_1 = require("../config.js");
 const TEMPLATE_DIR = path_1.default.join(__dirname, "..", "..", "brain-template", "templates");
 const TYPE_TO_TEMPLATE = {
-    feature: "feature-index.md",
-    subfeature: "subfeature-index.md",
+    // feature
+    feature: "feature.md",
+    subfeature: "feature.md",
+    // task
     task: "task.md",
-    flow: "flow.md",
-    error: "error.md",
-    "edge-case": "edge-case.md",
-    "test-case": "test-case.md",
-    page: "fe-page.md",
-    component: "fe-component.md",
-    state: "fe-state.md",
-    function: "be-function.md",
+    subtask: "task.md",
+    migration: "task.md",
+    refactor: "task.md",
+    // code entities
+    code: "code.md",
+    function: "code.md",
+    component: "code.md",
+    hook: "code.md",
+    service: "code.md",
+    module: "code.md",
+    api: "code.md",
+    schema: "code.md",
+    // other
+    test: "test.md",
+    app: "app.md",
     architecture: "architecture.md",
-    adr: "adr.md",
+    tool: "tool.md",
+    "edge-case": "edge-case.md",
+    edge: "edge-case.md",
 };
 function runNew(type, destPath) {
     const templateName = TYPE_TO_TEMPLATE[type.toLowerCase()];
     if (!templateName) {
-        console.error(`[new] unknown type "${type}". Available types:\n  ${Object.keys(TYPE_TO_TEMPLATE).join(", ")}`);
+        const types = [...new Set(Object.keys(TYPE_TO_TEMPLATE))].join(", ");
+        console.error(`[new] unknown type "${type}". Available types:\n  ${types}`);
         process.exit(1);
     }
     const templatePath = path_1.default.join(TEMPLATE_DIR, templateName);
     if (!fs_1.default.existsSync(templatePath)) {
         console.error(`[new] template not found: ${templatePath}`);
-        console.error(`      Run "code-kg init" first to scaffold the brain-template structure.`);
+        console.error(`      Run "code-kg init-templates" first to scaffold the brain-template structure.`);
         process.exit(1);
     }
     const absDestPath = path_1.default.isAbsolute(destPath) ? destPath : path_1.default.join(config_js_1.ROOT, destPath);

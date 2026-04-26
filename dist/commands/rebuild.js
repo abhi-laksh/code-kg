@@ -39,12 +39,24 @@ async function runRebuild(cfg, fast = false) {
         await (0, writer_js_1.writeFiles)(session, files);
         await (0, writer_js_1.writeSymbols)(session, allSymbols);
         await (0, writer_js_1.writeImports)(session, allImports);
+        await (0, writer_js_1.writeImportTypes)(session, entries.flatMap((e) => e.importTypes));
         await (0, writer_js_1.writeCalls)(session, calls);
+        await (0, writer_js_1.writeExtends)(session, entries.flatMap((e) => e.extends));
+        await (0, writer_js_1.writeImplements)(session, entries.flatMap((e) => e.implements));
+        await (0, writer_js_1.writeOverrides)(session, entries.flatMap((e) => e.overrides));
+        await (0, writer_js_1.writeDecoratedBy)(session, entries.flatMap((e) => e.decoratedBy));
+        await (0, writer_js_1.writeThrows)(session, entries.flatMap((e) => e.throws));
+        await (0, writer_js_1.writeReferencesType)(session, entries.flatMap((e) => e.referencesType));
+        await (0, writer_js_1.writeInstantiates)(session, entries.flatMap((e) => e.instantiates));
+        await (0, writer_js_1.writeUnionOf)(session, entries.flatMap((e) => e.unionOf));
+        await (0, writer_js_1.writeIntersectionOf)(session, entries.flatMap((e) => e.intersectionOf));
+        await (0, writer_js_1.writeReExports)(session, entries.flatMap((e) => e.reExports));
         await (0, writer_js_1.writeDocs)(session, docs);
         await (0, writer_js_1.writeDocLinks)(session, docs);
         await (0, writer_js_1.writePlanItems)(session, planItems);
         await (0, writer_js_1.writeDecisions)(session, decisions);
         await (0, writer_js_1.writeConstraints)(session, constraints);
+        await (0, writer_js_1.gcOrphanFiles)(session);
         const countsAfter = await (0, writer_js_1.collectCounts)(session);
         const report = {
             mode: "rebuild",

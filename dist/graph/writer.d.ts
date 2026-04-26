@@ -1,5 +1,5 @@
 import { Session } from "neo4j-driver";
-import { FileInfo, SymbolInfo, ImportEdge, CallEdge, DocInfo, PlanItem, Decision, Constraint, GraphCounts } from "../types.js";
+import { FileInfo, SymbolInfo, ImportEdge, CallEdge, SymbolEdge, ReExportsEdge, ImportTypeEdge, DocInfo, PlanItem, Decision, Constraint, GraphCounts } from "../types.js";
 export declare function ensureSchema(session: Session): Promise<void>;
 export declare function ensureProjectRoot(session: Session, project: string, root: string): Promise<void>;
 export declare function writeFolders(session: Session, folderPaths: string[], project: string): Promise<void>;
@@ -7,6 +7,17 @@ export declare function writeFiles(session: Session, files: FileInfo[]): Promise
 export declare function writeSymbols(session: Session, symbols: SymbolInfo[]): Promise<void>;
 export declare function writeImports(session: Session, rawImports: ImportEdge[]): Promise<void>;
 export declare function writeCalls(session: Session, calls: CallEdge[]): Promise<void>;
+export declare const writeExtends: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeImplements: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeOverrides: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeDecoratedBy: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeThrows: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeReferencesType: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeInstantiates: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeUnionOf: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare const writeIntersectionOf: (s: Session, e: SymbolEdge[]) => Promise<void>;
+export declare function writeReExports(session: Session, edges: ReExportsEdge[]): Promise<void>;
+export declare function writeImportTypes(session: Session, rawImports: ImportTypeEdge[]): Promise<void>;
 export declare function writeDocs(session: Session, docs: DocInfo[]): Promise<void>;
 export declare function writeDocLinks(session: Session, docs: DocInfo[]): Promise<void>;
 export declare function writePlanItems(session: Session, items: PlanItem[]): Promise<void>;
@@ -18,5 +29,6 @@ export declare function deleteImportsFor(session: Session, p: string): Promise<v
 export declare function deleteCallsTouching(session: Session, paths: string[]): Promise<void>;
 export declare function deleteDoc(session: Session, p: string): Promise<void>;
 export declare function gcEmptyFolders(session: Session): Promise<void>;
+export declare function gcOrphanFiles(session: Session): Promise<void>;
 export declare function collectCounts(session: Session): Promise<GraphCounts>;
 export declare function diffCounts(before: GraphCounts, after: GraphCounts): Partial<GraphCounts>;

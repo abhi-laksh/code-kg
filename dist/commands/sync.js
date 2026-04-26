@@ -7,13 +7,55 @@ exports.runSync = runSync;
 exports.applyBatch = applyBatch;
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const child_process_1 = require("child_process");
 const config_js_1 = require("../config.js");
 const driver_js_1 = require("../graph/driver.js");
 const walker_js_1 = require("../graph/walker.js");
 const parser_js_1 = require("../graph/parser.js");
 const writer_js_1 = require("../graph/writer.js");
 const driver_js_2 = require("../graph/driver.js");
+async function pruneIgnoredFromGraph(session, cfg) {
+    const { isIgnored } = (0, walker_js_1.walkRepo)(cfg);
+    const ignoreSet = new Set(cfg.ignoreDirs);
+    const isNowIgnored = (p) => isIgnored(p) || p.split("/").some((seg) => ignoreSet.has(seg));
+    const fileRes = await session.run(`MATCH (f:File) RETURN f.path AS p`);
+    const docRes = await session.run(`MATCH (d:Doc)  RETURN d.path AS p`);
+    const toRemoveFiles = fileRes.records.map((r) => r.get("p")).filter(isNowIgnored);
+    const toRemoveDocs = docRes.records.map((r) => r.get("p")).filter(isNowIgnored);
+    for (const p of toRemoveFiles)
+        await (0, writer_js_1.deleteFile)(session, p);
+    for (const p of toRemoveDocs)
+        await (0, writer_js_1.deleteDoc)(session, p);
+    const total = toRemoveFiles.length + toRemoveDocs.length;
+    if (total)
+        console.log(`[sync] pruned ${total} newly-ignored node(s) from graph`);
+}
+function detectChangedPaths() {
+    try {
+        const modified = (0, child_process_1.execSync)("git diff --name-only HEAD", { cwd: config_js_1.ROOT, encoding: "utf8" })
+            .split("\n").map((s) => s.trim()).filter(Boolean);
+        const untracked = (0, child_process_1.execSync)("git ls-files --others --exclude-standard", { cwd: config_js_1.ROOT, encoding: "utf8" })
+            .split("\n").map((s) => s.trim()).filter(Boolean);
+        const deleted = (0, child_process_1.execSync)("git ls-files --deleted", { cwd: config_js_1.ROOT, encoding: "utf8" })
+            .split("\n").map((s) => s.trim()).filter(Boolean);
+        const all = [...new Set([...modified, ...untracked, ...deleted])];
+        if (all.length)
+            console.log(`[sync] auto-detected ${all.length} changed file(s) from git`);
+        return all;
+    }
+    catch {
+        return [];
+    }
+}
 async function runSync(inputPaths, cfg, fast = false) {
+    if (!inputPaths.length) {
+        const detected = detectChangedPaths();
+        if (!detected.length) {
+            console.log("[sync] no changed files detected — nothing to sync");
+            return null;
+        }
+        inputPaths = detected;
+    }
     const norm = inputPaths
         .map((p) => path_1.default.isAbsolute(p) ? path_1.default.relative(config_js_1.ROOT, p) : p)
         .map(walker_js_1.normalizePath)
@@ -29,6 +71,14 @@ async function runSync(inputPaths, cfg, fast = false) {
             changed.push(p);
         else
             removed.push(p);
+    }
+    const session = (0, driver_js_1.openSession)(cfg);
+    try {
+        await (0, writer_js_1.ensureSchema)(session);
+        await pruneIgnoredFromGraph(session, cfg);
+    }
+    finally {
+        await session.close();
     }
     return applyBatch({ changed, removed }, cfg, fast);
 }
@@ -91,13 +141,23 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
             const sf = (0, parser_js_1.addOrRefreshSourceFile)(f.full);
             if (!sf)
                 continue;
-            const { symbols, imports } = (0, parser_js_1.parseSourceFile)(sf, f.path);
-            entries.push({ file: f, symbols, imports });
+            const result = (0, parser_js_1.parseSourceFile)(sf, f.path);
+            entries.push({ file: f, ...result });
         }
         const newSymbols = entries.flatMap((e) => e.symbols);
-        const newImports = entries.flatMap((e) => e.imports);
         await (0, writer_js_1.writeSymbols)(session, newSymbols);
-        await (0, writer_js_1.writeImports)(session, newImports);
+        await (0, writer_js_1.writeImports)(session, entries.flatMap((e) => e.imports));
+        await (0, writer_js_1.writeImportTypes)(session, entries.flatMap((e) => e.importTypes));
+        await (0, writer_js_1.writeExtends)(session, entries.flatMap((e) => e.extends));
+        await (0, writer_js_1.writeImplements)(session, entries.flatMap((e) => e.implements));
+        await (0, writer_js_1.writeOverrides)(session, entries.flatMap((e) => e.overrides));
+        await (0, writer_js_1.writeDecoratedBy)(session, entries.flatMap((e) => e.decoratedBy));
+        await (0, writer_js_1.writeThrows)(session, entries.flatMap((e) => e.throws));
+        await (0, writer_js_1.writeReferencesType)(session, entries.flatMap((e) => e.referencesType));
+        await (0, writer_js_1.writeInstantiates)(session, entries.flatMap((e) => e.instantiates));
+        await (0, writer_js_1.writeUnionOf)(session, entries.flatMap((e) => e.unionOf));
+        await (0, writer_js_1.writeIntersectionOf)(session, entries.flatMap((e) => e.intersectionOf));
+        await (0, writer_js_1.writeReExports)(session, entries.flatMap((e) => e.reExports));
         // Recompute calls for touched + expanded caller files.
         const callerEntries = [];
         for (const p of expandedCallerFiles) {
@@ -108,8 +168,8 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
             if (!sf)
                 continue;
             const info = (0, walker_js_1.buildFileInfo)(p, cfg);
-            const { symbols } = (0, parser_js_1.parseSourceFile)(sf, p);
-            callerEntries.push({ file: info, symbols });
+            const result = (0, parser_js_1.parseSourceFile)(sf, p);
+            callerEntries.push({ file: info, ...result });
         }
         // Build symbol index: newly written + caller files + global DB state.
         const globalRows = await session.run(`MATCH (s:Symbol) RETURN s.file AS file, s.name AS name, s.startLine AS startLine`);
@@ -121,8 +181,8 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
             symbolIndex.set(`${s.file}::${s.name}::${s.startLine}`, s);
         }
         const resolveEntries = [
-            ...entries.map((e) => ({ file: e.file, symbols: e.symbols, imports: e.imports })),
-            ...callerEntries.map((e) => ({ file: e.file, symbols: e.symbols, imports: [] })),
+            ...entries,
+            ...callerEntries.map((e) => ({ ...e, imports: [] })),
         ];
         const newCalls = fast
             ? (0, parser_js_1.resolveCallsFast)(resolveEntries, symbolIndex)
@@ -138,6 +198,7 @@ async function applyBatch({ changed, removed }, cfg, fast = false) {
         await (0, writer_js_1.writeDecisions)(session, decisions);
         await (0, writer_js_1.writeConstraints)(session, constraints);
         await (0, writer_js_1.gcEmptyFolders)(session);
+        await (0, writer_js_1.gcOrphanFiles)(session);
         const countsAfter = await (0, writer_js_1.collectCounts)(session);
         const report = {
             mode: "sync",
