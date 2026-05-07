@@ -6,8 +6,7 @@
     "code-kg": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
-    "prepare": "npm run build"
+    "build": "tsc"
   },
   "files": [
     "dist",
